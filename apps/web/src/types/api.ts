@@ -4,6 +4,7 @@ import type {
   HorseSex,
   ResourceKind,
   Role,
+  TrainingLogType,
 } from "@stablemanager/shared";
 
 export type Horse = {
@@ -194,4 +195,17 @@ export type FarrierVisit = {
   createdAt: string;
   signupCount?: number;
   signups: FarrierSignup[];
+};
+
+export type TrainingLog = {
+  id: string;
+  tenantId: string;
+  horseId: string;
+  date: string;
+  type: TrainingLogType;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  horseName: string;
+  createdByName: string | null;
 };

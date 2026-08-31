@@ -23,7 +23,7 @@ const selfDayInputs = ref<Record<string, string>>({});
 const periodMode = ref<"end" | "days">("end");
 const form = ref({ horseId: "", title: "", instructions: "", startDate: dayKey(new Date()), endDate: "", durationDays: 1, dailyCount: 1 });
 
-const canManage = computed(() => auth.isAdmin || auth.currentRole === "horse_owner");
+const canManage = computed(() => auth.isAdmin || auth.currentRole === "boarder");
 const isTeam = computed(() => auth.isAdmin || auth.currentRole === "staff");
 
 function moveDay(amount: number) {
@@ -126,7 +126,7 @@ onMounted(load);
   <div class="space-y-6">
     <div class="flex items-center justify-between gap-3">
       <h1 class="text-xl font-semibold text-brand-800">{{ t("services.title") }}</h1>
-      <button v-if="auth.currentRole === 'horse_owner'" class="btn-primary" type="button" @click="openCreate">{{ t("services.newOrder") }}</button>
+      <button v-if="auth.currentRole === 'boarder'" class="btn-primary" type="button" @click="openCreate">{{ t("services.newOrder") }}</button>
     </div>
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

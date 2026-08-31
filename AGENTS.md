@@ -25,20 +25,20 @@ pnpm dev
 - Web: http://localhost:5173 (`/api` → Worker :8787)
 - API: http://localhost:8787 (`wrangler dev --port 8787`)
 
-Demo-Hof: Login „Demo-Hof anlegen“ oder `POST /api/bootstrap`. Dev-Logins: `admin@example.com`, `staff@example.com`, `owner@example.com` (Dropdown „Login as“).
+Demo-Hof: Login „Demo-Hof anlegen“ oder `POST /api/bootstrap`. Dev-Logins: `admin@example.com`, `staff@example.com`, `daniela@example.com` (Dropdown „Login as“).
 
 ## Rollen (eine Membership pro User × Tenant)
 
 | Rolle | Bedeutung |
 |-------|-----------|
 | `hof_admin` | Hof-Admin: Einstellungen, Einladungen, alles |
-| `staff` | Mitarbeiter: schreiben an Pferden, Housing, Kalender, Brett, Care, Hufschmied |
-| `horse_owner` | Pferdebesitzer: nur eigene Pferde sehen; lesen Kalender/Brett; Hufschmied anmelden |
+| `staff` | Mitarbeiter: schreiben an Pferden, Housing, Kalender, Brett, Care, Hufschmied, Training |
+| `boarder` | Einsteller: nur eigene Pferde sehen; lesen Kalender/Brett/Training; Hufschmied anmelden |
 
 Frontend: `auth.isAdmin`, `auth.canWrite` (= admin \|\| staff) in `apps/web/src/stores/auth.ts`.  
-Backend: `requireRoles`, `canWriteStaff`, `isOwnerOnly` in `apps/api/src/lib/rbac.ts`.
+Backend: `requireRoles`, `canWriteStaff`, `isBoarderOnly` in `apps/api/src/lib/rbac.ts`.
 
-**Pferdebesitz ≠ Rolle:** Jedes Mitglied (auch Admin/Staff) kann als `horses.ownerUserId` gesetzt werden. Die Rolle bleibt Admin/Staff; die eingeschränkte Owner-Sicht gilt nur bei Membership `horse_owner`.
+**Pferdebesitz ≠ Rolle:** Jedes Mitglied (auch Admin/Staff) kann als `horses.ownerUserId` gesetzt werden. Die Rolle bleibt Admin/Staff; die eingeschränkte Einsteller-Sicht gilt nur bei Membership `boarder`.
 
 ## Features (Stand)
 
@@ -46,7 +46,7 @@ Backend: `requireRoles`, `canWriteStaff`, `isOwnerOnly` in `apps/api/src/lib/rba
 - Profil: Name, FEIF-ID, Geschlecht, Geburtsjahr, Besitzer, Unterbringung, Notizen
 - FEIF-ID kann Geburtsjahr/Geschlecht vorbelegen
 - Unterbringungshistorie (`horse_accommodation_history`)
-- Owner sehen nur eigene Pferde; Staff/Admin alle; Schreiben nur Staff/Admin
+- Einsteller sehen nur eigene Pferde; Staff/Admin alle; Schreiben nur Staff/Admin
 
 ### Unterbringung (`/housing`)
 - Arten: `box`, `paddock_box`, `paddock`, `pasture`
@@ -63,7 +63,7 @@ Backend: `requireRoles`, `canWriteStaff`, `isOwnerOnly` in `apps/api/src/lib/rba
 - Schreiben: Staff/Admin; Lesen: alle
 
 ### Hufschmied-Termine (`/farrier`) — getrennt von Care-Erinnerungen
-- Staff/Admin legen `farrier_visits` an (offen/geschlossen); Notification `farrier_visit` an alle `horse_owner`
+- Staff/Admin legen `farrier_visits` an (offen/geschlossen); Notification `farrier_visit` an alle `boarder`
 - Anmeldung (`farrier_signups`): Beschlag `trim` \| `front_shoes` \| `all_shoes` \| `other`; Vorstellung `staff` \| `owner`
 - Staff-Checkliste: Signups mit `presentation=staff` als vorgestellt markieren
 - Hof-Admin: Abrechnungsliste (`billedAt`) — keine PDF/Preise/Zahlungen
@@ -73,6 +73,14 @@ Backend: `requireRoles`, `canWriteStaff`, `isOwnerOnly` in `apps/api/src/lib/rba
 - Care-Events: `farrier` \| `vaccination` (Fälligkeit, Intervall, Erledigt → nächstes Event)
 - Cron `0 6 * * *` → In-App-Notifications `care_due`
 - Unabhängig von Hufschmied-Besuchsterminen
+
+### Training (`/training`) — Tagesprotokoll
+- Einträge (`training_logs`): `longe` \| `ridden` \| `trail` \| `rental` (Longiert, Beritt, Ausritt, Leihpferd)
+- Mehrere Einträge pro Pferd und Tag erlaubt; optionale Notiz
+- Schreiben: Staff/Admin für **alle** Hofpferde (hofeigene, Mitarbeiter-, Kundenpferde)
+- Lesen: Staff/Admin alle; `boarder` nur Pferde mit `ownerUserId === user`
+- Ansichten: Tag (gruppiert nach Pferd) und Monat (optional Pferdefilter); Ausschnitt am Pferde-Detail
+- API: `/api/training-logs` (`date` oder `from`+`to` max. 31 Tage, optional `horseId`)
 
 ### Einstellungen (`/settings`, nur `hof_admin`)
 - Hofname, Zeitzone, Mitglieder, Einladungen, buchbare Ressourcen
@@ -85,7 +93,7 @@ Backend: `requireRoles`, `canWriteStaff`, `isOwnerOnly` in `apps/api/src/lib/rba
 
 ```
 apps/api/src/db/schema.ts          # Drizzle-Schema
-apps/api/migrations/               # D1-Migrationen (0000–0002)
+apps/api/migrations/               # D1-Migrationen (0000–0005)
 apps/api/src/routes/*.ts           # Hono-Routen
 apps/api/src/index.ts              # Mount + Cron
 packages/shared/src/schemas.ts     # Zod + shared Types

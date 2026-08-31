@@ -68,7 +68,7 @@ async function ensureDemoUsers(env: Env) {
     id: string;
     email: string;
     name: string;
-    role: "hof_admin" | "staff" | "horse_owner";
+    role: "hof_admin" | "staff" | "boarder";
     tenantId: string;
     tenantName: string;
   }>;

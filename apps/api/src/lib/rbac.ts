@@ -18,6 +18,6 @@ export function canWriteStaff(role: Role): boolean {
   return role === "hof_admin" || role === "staff";
 }
 
-export function isOwnerOnly(role: Role): boolean {
-  return role === "horse_owner";
+export function isBoarderOnly(role: Role): boolean {
+  return role === "boarder";
 }

@@ -58,3 +58,48 @@ export function dayKey(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+export function startOfMonth(date = new Date()): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+export function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+export function monthKey(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+}
+
+export function monthBounds(ym: string): { from: string; to: string } {
+  const parts = ym.split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const fromDate = new Date(y, m - 1, 1);
+  const toDate = new Date(y, m, 0);
+  return { from: dayKey(fromDate), to: dayKey(toDate) };
+}
+
+export function formatMonthLabel(ym: string): string {
+  const parts = ym.split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  return new Date(y, m - 1, 1).toLocaleDateString("de-DE", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** Format a local YYYY-MM-DD date for display without UTC shift. */
+export function formatLocalDate(ymd: string): string {
+  const parts = ymd.split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  return new Date(y, m - 1, d).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}

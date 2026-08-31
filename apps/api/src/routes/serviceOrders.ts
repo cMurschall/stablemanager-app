@@ -19,7 +19,7 @@ import {
 } from "../db/schema";
 import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
-import { isOwnerOnly, requireRoles } from "../lib/rbac";
+import { isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
 
 export const serviceOrderRoutes = new Hono<{
@@ -73,7 +73,7 @@ async function findOrder(c: any, orderId: string) {
 
 async function canManageOrder(c: any, order: typeof serviceOrders.$inferSelect): Promise<boolean> {
   if (c.get("role") === "hof_admin") return true;
-  if (!isOwnerOnly(c.get("role"))) return false;
+  if (!isBoarderOnly(c.get("role"))) return false;
   const db = createDb(c.env);
   const horse = await db
     .select({ ownerUserId: horses.ownerUserId })
@@ -87,7 +87,7 @@ serviceOrderRoutes.get("/", async (c) => {
   if (c.get("role") === "staff") return c.json({ error: "Keine Berechtigung" }, 403);
   const db = createDb(c.env);
   const conditions = [eq(serviceOrders.tenantId, c.get("tenantId"))];
-  if (isOwnerOnly(c.get("role"))) conditions.push(eq(horses.ownerUserId, c.get("userId")));
+  if (isBoarderOnly(c.get("role"))) conditions.push(eq(horses.ownerUserId, c.get("userId")));
   const rows = await db
     .select({
       id: serviceOrders.id,
@@ -117,7 +117,7 @@ serviceOrderRoutes.get("/", async (c) => {
   });
 });
 
-serviceOrderRoutes.post("/", requireRoles("hof_admin", "horse_owner"), async (c) => {
+serviceOrderRoutes.post("/", requireRoles("hof_admin", "boarder"), async (c) => {
   const body = CreateServiceOrderSchema.safeParse(await c.req.json());
   if (!body.success || !isDate(body.data?.startDate ?? "") || (body.data?.endDate && !isDate(body.data.endDate))) {
     return c.json({ error: "UngÃ¼ltige Anfrage", details: body.success ? undefined : body.error.flatten() }, 400);
@@ -125,7 +125,7 @@ serviceOrderRoutes.post("/", requireRoles("hof_admin", "horse_owner"), async (c)
   const db = createDb(c.env);
   const horse = await db.select().from(horses).where(and(eq(horses.id, body.data.horseId), eq(horses.tenantId, c.get("tenantId")))).get();
   if (!horse) return c.json({ error: "Pferd nicht gefunden" }, 404);
-  if (isOwnerOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
   const tenant = await db.select().from(tenants).where(eq(tenants.id, c.get("tenantId"))).get();
   if (!tenant || body.data.dailyCount > tenant.maxDailyServiceTasks) return c.json({ error: "TÃ¤gliche HÃ¤ufigkeit Ã¼berschreitet das Hof-Limit" }, 400);
   const endDate = body.data.endDate ?? addLocalDays(body.data.startDate, body.data.durationDays! - 1);
@@ -135,7 +135,7 @@ serviceOrderRoutes.post("/", requireRoles("hof_admin", "horse_owner"), async (c)
   return c.json({ serviceOrder: { ...row, horseName: horse.name, selfDays: [] } }, 201);
 });
 
-serviceOrderRoutes.patch("/:id", requireRoles("hof_admin", "horse_owner"), async (c) => {
+serviceOrderRoutes.patch("/:id", requireRoles("hof_admin", "boarder"), async (c) => {
   const body = UpdateServiceOrderSchema.safeParse(await c.req.json());
   if (!body.success) return c.json({ error: "UngÃ¼ltige Anfrage", details: body.error.flatten() }, 400);
   const existing = await findOrder(c, routeParam(c, "id"));
@@ -150,7 +150,7 @@ serviceOrderRoutes.patch("/:id", requireRoles("hof_admin", "horse_owner"), async
   return c.json({ serviceOrder: { ...existing, ...body.data } });
 });
 
-serviceOrderRoutes.post("/:id/cancel", requireRoles("hof_admin", "horse_owner"), async (c) => {
+serviceOrderRoutes.post("/:id/cancel", requireRoles("hof_admin", "boarder"), async (c) => {
   const existing = await findOrder(c, routeParam(c, "id"));
   if (!existing) return c.json({ error: "Serviceauftrag nicht gefunden" }, 404);
   if (!(await canManageOrder(c, existing))) return c.json({ error: "Keine Berechtigung" }, 403);
@@ -158,7 +158,7 @@ serviceOrderRoutes.post("/:id/cancel", requireRoles("hof_admin", "horse_owner"),
   return c.json({ ok: true });
 });
 
-serviceOrderRoutes.put("/:id/self-days", requireRoles("hof_admin", "horse_owner"), async (c) => {
+serviceOrderRoutes.put("/:id/self-days", requireRoles("hof_admin", "boarder"), async (c) => {
   const body = SetServiceSelfDaySchema.safeParse(await c.req.json());
   if (!body.success || !isDate(body.data?.date ?? "")) return c.json({ error: "UngÃ¼ltige Anfrage" }, 400);
   const existing = await findOrder(c, routeParam(c, "id"));
@@ -169,7 +169,7 @@ serviceOrderRoutes.put("/:id/self-days", requireRoles("hof_admin", "horse_owner"
   return c.json({ ok: true });
 });
 
-serviceOrderRoutes.delete("/:id/self-days/:date", requireRoles("hof_admin", "horse_owner"), async (c) => {
+serviceOrderRoutes.delete("/:id/self-days/:date", requireRoles("hof_admin", "boarder"), async (c) => {
   const existing = await findOrder(c, routeParam(c, "id"));
   if (!existing) return c.json({ error: "Serviceauftrag nicht gefunden" }, 404);
   if (!(await canManageOrder(c, existing))) return c.json({ error: "Keine Berechtigung" }, 403);

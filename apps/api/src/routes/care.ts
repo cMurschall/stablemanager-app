@@ -11,7 +11,7 @@ import { createDb } from "../db/client";
 import { careEvents, horses } from "../db/schema";
 import { addDays, id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
-import { isOwnerOnly, requireRoles } from "../lib/rbac";
+import { isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
 
 export const careRoutes = new Hono<{
@@ -39,7 +39,7 @@ careRoutes.get("/", async (c) => {
     conditions.push(sql`${careEvents.doneAt} IS NOT NULL`);
   }
 
-  if (isOwnerOnly(role)) {
+  if (isBoarderOnly(role)) {
     conditions.push(eq(horses.ownerUserId, userId));
   }
 

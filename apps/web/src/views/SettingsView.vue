@@ -20,7 +20,7 @@ const inviteDevLink = ref("");
 const tenantForm = ref({ name: "", timezone: "Europe/Berlin", maxDailyServiceTasks: 3 });
 const inviteForm = ref({
   email: "",
-  role: "horse_owner" as Role,
+  role: "boarder" as Role,
   name: "",
 });
 const resourceForm = ref({
@@ -92,7 +92,7 @@ async function sendInvite() {
       },
     );
     if (res.devLink) inviteDevLink.value = res.devLink;
-    inviteForm.value = { email: "", role: "horse_owner", name: "" };
+    inviteForm.value = { email: "", role: "boarder", name: "" };
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -203,7 +203,7 @@ onMounted(load);
           <select v-model="inviteForm.role" class="field mt-1">
             <option value="hof_admin">{{ t("roles.hof_admin") }}</option>
             <option value="staff">{{ t("roles.staff") }}</option>
-            <option value="horse_owner">{{ t("roles.horse_owner") }}</option>
+            <option value="boarder">{{ t("roles.boarder") }}</option>
           </select>
         </label>
         <label class="block text-sm font-medium">

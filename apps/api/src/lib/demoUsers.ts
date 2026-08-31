@@ -13,8 +13,8 @@ export const DEMO_USERS: DemoUser[] = [
   { name: "Fraya", email: "fraya@example.com", role: "staff" },
   { name: "Julie", email: "julie@example.com", role: "staff" },
   { name: "Sammy", email: "sammy@example.com", role: "staff" },
-  { name: "Daniela Schulz", email: "daniela@example.com", role: "horse_owner" },
-  { name: "Anna Krummel", email: "anna@example.com", role: "horse_owner" },
+  { name: "Daniela Schulz", email: "daniela@example.com", role: "boarder" },
+  { name: "Anna Krummel", email: "anna@example.com", role: "boarder" },
 ];
 
 export const DEMO_ADMIN = DEMO_USERS.find(

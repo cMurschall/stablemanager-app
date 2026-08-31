@@ -10,7 +10,7 @@ export type Env = {
 export type AppVariables = {
   userId: string;
   tenantId: string;
-  role: "hof_admin" | "staff" | "horse_owner";
+  role: "hof_admin" | "staff" | "boarder";
   email: string;
   name: string;
 };

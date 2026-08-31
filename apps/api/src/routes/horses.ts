@@ -14,7 +14,7 @@ import {
 } from "../lib/accommodationHistory";
 import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
-import { canWriteStaff, isOwnerOnly, requireRoles } from "../lib/rbac";
+import { canWriteStaff, isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
 
 export const horseRoutes = new Hono<{
@@ -35,7 +35,7 @@ horseRoutes.get("/", async (c) => {
   const userId = c.get("userId");
 
   const conditions = [eq(horses.tenantId, tenantId)];
-  if (isOwnerOnly(role)) {
+  if (isBoarderOnly(role)) {
     conditions.push(eq(horses.ownerUserId, userId));
   }
 
@@ -75,7 +75,7 @@ horseRoutes.get("/:id", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isOwnerOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
+  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
@@ -96,7 +96,7 @@ horseRoutes.get("/:id/accommodation-history", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isOwnerOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
+  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 

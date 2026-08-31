@@ -68,7 +68,7 @@ export async function runCareReminders(env: Env): Promise<{ created: number }> {
 
     for (const member of recipients) {
       if (
-        member.role === "horse_owner" &&
+        member.role === "boarder" &&
         member.userId !== event.ownerUserId
       ) {
         continue;

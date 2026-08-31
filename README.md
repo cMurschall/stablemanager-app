@@ -40,8 +40,8 @@ Das erzeugt lokal den Entwicklungs-Hof **Kjoelavik** samt Demo-Mitgliedern. Eige
 | Rolle | Rechte |
 |-------|--------|
 | `hof_admin` | Stammdaten, Einladungen, alles |
-| `staff` | Pferde, Unterbringung, Kalender, Brett, Erinnerungen |
-| `horse_owner` | nur eigene Pferde; Kalender/Brett lesen |
+| `staff` | Pferde, Unterbringung, Kalender, Brett, Erinnerungen, Training |
+| `boarder` | nur eigene Pferde; Kalender/Brett/Training lesen |
 
 ## Phase-1 Features
 
@@ -50,6 +50,7 @@ Das erzeugt lokal den Entwicklungs-Hof **Kjoelavik** samt Demo-Mitgliedern. Eige
 - Belegungskalender (Ovalbahn / Halle)
 - Schwarzes Brett
 - Hufschmied- / Impf-Erinnerungen (Cron + In-App)
+- Trainingsprotokoll (Longieren, Beritt, Ausritt, Leihpferd; Tag- und Monatsansicht)
 
 ## Deploy
 

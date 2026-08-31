@@ -11,6 +11,7 @@ import { farrierRoutes } from "./routes/farrier";
 import { notificationRoutes } from "./routes/notifications";
 import { tenantRoutes } from "./routes/tenants";
 import { serviceOrderRoutes } from "./routes/serviceOrders";
+import { trainingRoutes } from "./routes/training";
 import { runCareReminders } from "./jobs/careReminders";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
@@ -30,6 +31,7 @@ app.route("/api/care-events", careRoutes);
 app.route("/api/farrier", farrierRoutes);
 app.route("/api/notifications", notificationRoutes);
 app.route("/api/service-orders", serviceOrderRoutes);
+app.route("/api/training-logs", trainingRoutes);
 
 app.notFound(async (c) => {
   if (c.req.path.startsWith("/api/")) {

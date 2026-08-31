@@ -6,6 +6,7 @@ import {
   CreateFarrierVisitSchema,
   UpdateFarrierSignupSchema,
   UpdateFarrierVisitSchema,
+  type Role,
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
@@ -19,7 +20,7 @@ import {
 } from "../db/schema";
 import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
-import { canWriteStaff, isOwnerOnly, requireRoles } from "../lib/rbac";
+import { canWriteStaff, isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
 
 export const farrierRoutes = new Hono<{
@@ -35,14 +36,14 @@ async function loadVisitSignups(
   db: Db,
   tenantId: string,
   visitId: string,
-  role: string,
+  role: Role,
   userId: string,
 ) {
   const conditions = [
     eq(farrierSignups.tenantId, tenantId),
     eq(farrierSignups.visitId, visitId),
   ];
-  if (isOwnerOnly(role as "horse_owner")) {
+  if (isBoarderOnly(role)) {
     conditions.push(eq(horses.ownerUserId, userId));
   }
 
@@ -196,7 +197,7 @@ farrierRoutes.post(
       .where(
         and(
           eq(memberships.tenantId, tenantId),
-          eq(memberships.role, "horse_owner"),
+          eq(memberships.role, "boarder"),
         ),
       )
       .all();
@@ -343,7 +344,7 @@ farrierRoutes.post("/visits/:id/signups", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isOwnerOnly(role) && horse.ownerUserId !== userId) {
+  if (isBoarderOnly(role) && horse.ownerUserId !== userId) {
     return c.json({ error: "Keine Berechtigung für dieses Pferd" }, 403);
   }
 
@@ -415,7 +416,7 @@ farrierRoutes.patch("/signups/:id", async (c) => {
     return c.json({ error: "Anmeldung nicht gefunden" }, 404);
   }
 
-  if (isOwnerOnly(role)) {
+  if (isBoarderOnly(role)) {
     if (row.ownerUserId !== userId) {
       return c.json({ error: "Keine Berechtigung" }, 403);
     }
@@ -610,7 +611,7 @@ farrierRoutes.get("/signups", async (c) => {
   if (billed) {
     conditions.push(isNotNull(farrierSignups.billedAt));
   }
-  if (isOwnerOnly(role)) {
+  if (isBoarderOnly(role)) {
     conditions.push(eq(horses.ownerUserId, userId));
   }
 

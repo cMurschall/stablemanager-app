@@ -4,6 +4,9 @@
   "entries": [
     "0000_init",
     "0001_accommodation_history",
-    "0002_farrier_visits"
+    "0002_farrier_visits",
+    "0003_service_orders",
+    "0004_training_logs",
+    "0005_role_boarder"
   ]
 }

@@ -73,6 +73,7 @@ const links = [
   { to: "/board", label: "nav.board" },
   { to: "/farrier", label: "nav.farrier" },
   { to: "/services", label: "nav.services" },
+  { to: "/training", label: "nav.training" },
   { to: "/reminders", label: "nav.reminders" },
 ];
 </script>

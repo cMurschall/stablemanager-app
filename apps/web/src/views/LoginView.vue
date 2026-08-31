@@ -27,7 +27,7 @@ const needsBootstrap = ref(false);
 const roleLabel: Record<Role, string> = {
   hof_admin: "Hof-Admin",
   staff: "Mitarbeiter",
-  horse_owner: "Pferdebesitzer",
+  boarder: "Einsteller",
 };
 
 async function loadUsers() {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const RoleSchema = z.enum(["hof_admin", "staff", "horse_owner"]);
+export const RoleSchema = z.enum(["hof_admin", "staff", "boarder"]);
 export type Role = z.infer<typeof RoleSchema>;
 
 export const HorseSexSchema = z.enum(["mare", "stallion", "gelding"]);
@@ -236,4 +236,25 @@ export const UpdateFarrierSignupSchema = z.object({
 
 export const BillFarrierSignupSchema = z.object({
   billed: z.boolean().optional().default(true),
+});
+
+export const TrainingLogTypeSchema = z.enum([
+  "longe",
+  "ridden",
+  "trail",
+  "rental",
+]);
+export type TrainingLogType = z.infer<typeof TrainingLogTypeSchema>;
+
+export const CreateTrainingLogSchema = z.object({
+  horseId: z.string().uuid(),
+  date: LocalDateSchema,
+  type: TrainingLogTypeSchema,
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+export const UpdateTrainingLogSchema = z.object({
+  date: LocalDateSchema.optional(),
+  type: TrainingLogTypeSchema.optional(),
+  notes: z.string().max(2000).optional().nullable(),
 });

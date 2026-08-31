@@ -5,7 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { HorseSex } from "@stablemanager/shared";
 import { api } from "@/lib/api";
-import { formatDateTime } from "@/lib/dates";
+import { addDays, dayKey, formatDateTime, formatLocalDate, monthKey } from "@/lib/dates";
 import { parseFeifId } from "@/lib/feif";
 import { useAuthStore } from "@/stores/auth";
 import type {
@@ -13,6 +13,7 @@ import type {
   AccommodationHistoryEntry,
   Horse,
   Member,
+  TrainingLog,
 } from "@/types/api";
 
 const { t } = useI18n();
@@ -24,6 +25,7 @@ const horse = ref<Horse | null>(null);
 const allHorses = ref<Horse[]>([]);
 const accommodations = ref<Accommodation[]>([]);
 const accommodationHistory = ref<AccommodationHistoryEntry[]>([]);
+const trainingLogs = ref<TrainingLog[]>([]);
 const members = ref<Member[]>([]);
 const loading = ref(true);
 const saving = ref(false);
@@ -55,17 +57,25 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [h, a, list] = await Promise.all([
+    const to = dayKey(new Date());
+    const from = dayKey(addDays(new Date(), -30));
+    const [h, a, list, training] = await Promise.all([
       api<{ horse: Horse; accommodationHistory: AccommodationHistoryEntry[] }>(
         `/api/horses/${horseId.value}`,
       ),
       api<{ accommodations: Accommodation[] }>("/api/housing/accommodations"),
       api<{ horses: Horse[] }>("/api/horses"),
+      api<{ trainingLogs: TrainingLog[] }>(
+        `/api/training-logs?from=${from}&to=${to}&horseId=${horseId.value}`,
+      ),
     ]);
     horse.value = h.horse;
     accommodationHistory.value = h.accommodationHistory ?? [];
     accommodations.value = a.accommodations;
     allHorses.value = list.horses;
+    trainingLogs.value = [...training.trainingLogs]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 10);
     syncForm();
     if (auth.canWrite) {
       try {
@@ -322,6 +332,53 @@ onMounted(load);
               </RouterLink>
             </li>
           </ul>
+        </section>
+
+        <section class="rounded-2xl border border-stone-200 bg-white p-4">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-sm font-medium text-stone-800">
+              {{ t("horses.trainingHistory") }}
+            </h2>
+            <RouterLink
+              :to="{
+                name: 'training',
+                query: {
+                  view: 'month',
+                  month: monthKey(new Date()),
+                  horseId: horse.id,
+                },
+              }"
+              class="text-xs text-brand-700 hover:underline"
+            >
+              {{ t("horses.trainingHistoryMore") }}
+            </RouterLink>
+          </div>
+          <p
+            v-if="!trainingLogs.length"
+            class="mt-2 text-sm text-stone-500"
+          >
+            {{ t("horses.trainingHistoryEmpty") }}
+          </p>
+          <ol v-else class="mt-3 space-y-3">
+            <li
+              v-for="entry in trainingLogs"
+              :key="entry.id"
+              class="border-l-2 border-brand-200 pl-3 text-sm"
+            >
+              <p class="font-medium text-stone-800">
+                {{ t(`training.type.${entry.type}`) }}
+              </p>
+              <p class="mt-0.5 text-xs text-stone-500">
+                {{ formatLocalDate(entry.date) }}
+                <span v-if="entry.createdByName">
+                  · {{ entry.createdByName }}
+                </span>
+              </p>
+              <p v-if="entry.notes" class="mt-0.5 text-stone-600">
+                {{ entry.notes }}
+              </p>
+            </li>
+          </ol>
         </section>
 
         <section class="rounded-2xl border border-stone-200 bg-white p-4">

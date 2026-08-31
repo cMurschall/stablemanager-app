@@ -43,7 +43,7 @@ export const memberships = sqliteTable(
     tenantId: text("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
-    role: text("role", { enum: ["hof_admin", "staff", "horse_owner"] }).notNull(),
+    role: text("role", { enum: ["hof_admin", "staff", "boarder"] }).notNull(),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -99,7 +99,7 @@ export const invites = sqliteTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
-    role: text("role", { enum: ["hof_admin", "staff", "horse_owner"] }).notNull(),
+    role: text("role", { enum: ["hof_admin", "staff", "boarder"] }).notNull(),
     name: text("name"),
     tokenHash: text("token_hash").notNull(),
     expiresAt: text("expires_at").notNull(),
@@ -456,5 +456,33 @@ export const farrierSignups = sqliteTable(
     index("farrier_signups_tenant_idx").on(t.tenantId),
     index("farrier_signups_visit_idx").on(t.visitId),
     index("farrier_signups_present_idx").on(t.tenantId, t.presentedAt),
+  ],
+);
+
+export const trainingLogs = sqliteTable(
+  "training_logs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    horseId: text("horse_id")
+      .notNull()
+      .references(() => horses.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    type: text("type", {
+      enum: ["longe", "ridden", "trail", "rental"],
+    }).notNull(),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("training_logs_tenant_date_idx").on(t.tenantId, t.date),
+    index("training_logs_horse_date_idx").on(t.horseId, t.date),
   ],
 );
