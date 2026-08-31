@@ -17,13 +17,19 @@ export function parseFeifId(raw: string): ParsedFeifId | null {
   const m = feifId.match(/^([A-Z]{2})(\d{4})([12])(\d{5,9})$/);
   if (!m) return null;
 
-  const birthYear = Number(m[2]);
+  const country = m[1];
+  const birthYearStr = m[2];
+  const sexDigit = m[3];
+
+  if (!country || !birthYearStr || !sexDigit) return null;
+
+  const birthYear = Number(birthYearStr);
   if (birthYear < 1980 || birthYear > 2100) return null;
 
   return {
     feifId,
-    country: m[1],
+    country,
     birthYear,
-    sex: m[3] === "2" ? "mare" : "stallion",
+    sex: sexDigit === "2" ? "mare" : "stallion",
   };
 }
