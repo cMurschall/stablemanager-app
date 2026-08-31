@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eef7f1;
+  --color-brand-100: #d5ebdd;
+  --color-brand-200: #abd7bb;
+  --color-brand-500: #2d8a56;
+  --color-brand-600: #1a5c3a;
+  --color-brand-700: #14472d;
+  --color-brand-800: #0f3522;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, #d5ebdd55, transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, #abd7bb33, transparent),
+    #f7f5f0;
+  color: #1c1917;
+}
+
+.field {
+  @apply mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+}
+
+.btn-primary {
+  @apply rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60;
+}
+
+.btn-ghost {
+  @apply rounded-xl px-3 py-2 text-sm text-stone-600 hover:bg-stone-100;
+}
+
+.btn-danger {
+  @apply rounded-xl px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50;
+}

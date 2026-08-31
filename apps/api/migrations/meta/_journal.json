@@ -1,0 +1,9 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "entries": [
+    "0000_init",
+    "0001_accommodation_history",
+    "0002_farrier_visits"
+  ]
+}

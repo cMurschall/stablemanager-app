@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+apps/api/.wrangler/
+apps/*/cookies.txt
+*.local.json
+
+apps/api/seed-horses.sql

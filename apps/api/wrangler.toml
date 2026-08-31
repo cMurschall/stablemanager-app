@@ -1,0 +1,26 @@
+name = "stablemanager"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "stablemanager"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations"
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[triggers]
+crons = ["0 6 * * *"]
+
+[vars]
+APP_NAME = "Stablemanager"
+ENVIRONMENT = "development"
+
+# Set via: wrangler secret put SESSION_SECRET
+# Optional: wrangler secret put RESEND_API_KEY
