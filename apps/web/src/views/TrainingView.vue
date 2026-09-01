@@ -272,7 +272,9 @@ watch(
       </button>
     </div>
 
-    <div class="flex gap-1 rounded-lg bg-stone-100 p-1 text-sm w-fit">
+    <section class="groupbox w-fit">
+      <h2 class="sr-only">Ansicht wählen</h2>
+    <div class="flex gap-1 rounded-lg bg-stone-100 p-1 text-sm">
       <button
         type="button"
         class="rounded-md px-3 py-1"
@@ -298,6 +300,7 @@ watch(
         {{ t("training.viewMonth") }}
       </button>
     </div>
+    </section>
 
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

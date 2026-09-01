@@ -82,18 +82,16 @@ async function loginAs(email: string) {
 
 const links = [
   { to: "/horses", label: "nav.horses" },
-  { to: "/housing", label: "nav.housing", internal: true },
+  { to: "/housing", label: "nav.housing" },
   { to: "/calendar", label: "nav.calendar" },
   { to: "/board", label: "nav.board" },
-  { to: "/farrier", label: "nav.farrier", internal: true },
-  { to: "/services", label: "nav.services", internal: true },
-  { to: "/training", label: "nav.training", internal: true },
+  { to: "/farrier", label: "nav.farrier" },
+  { to: "/services", label: "nav.services" },
+  { to: "/training", label: "nav.training" },
   { to: "/reminders", label: "nav.reminders" },
 ];
 
-const visibleLinks = computed(() =>
-  links.filter((link) => !link.internal || auth.currentRole !== "boarder"),
-);
+const visibleLinks = computed(() => links);
 </script>
 
 <template>
@@ -151,6 +149,7 @@ const visibleLinks = computed(() =>
           <RouterLink
             to="/reminders"
             class="relative rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+            :aria-label="unread ? `${unread} ungelesene Benachrichtigungen` : 'Benachrichtigungen'"
           >
             🔔
             <span
@@ -199,10 +198,17 @@ const visibleLinks = computed(() =>
           :key="link.to"
           :to="link.to"
           class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-brand-50"
+          active-class="!bg-brand-100 !text-brand-800 font-medium"
           @click="menuOpen = false"
         >
           {{ t(link.label) }}
         </RouterLink>
+        <label v-if="auth.memberships.length > 1" class="px-3 py-2 text-sm text-stone-600">
+          Hof wechseln
+          <select class="field mt-1" :value="auth.currentTenantId ?? undefined" @change="onSwitch(($event.target as HTMLSelectElement).value)">
+            <option v-for="m in auth.memberships" :key="m.tenantId" :value="m.tenantId">{{ m.tenantName }}</option>
+          </select>
+        </label>
         <RouterLink
           v-if="auth.isAdmin"
           to="/settings"

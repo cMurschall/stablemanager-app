@@ -7,8 +7,6 @@ import { api } from "@/lib/api";
 import { parseFeifId } from "@/lib/feif";
 import { useAuthStore } from "@/stores/auth";
 import type { Accommodation, Horse, Member } from "@/types/api";
-import FarrierView from "@/views/FarrierView.vue";
-import ServiceOrdersView from "@/views/ServiceOrdersView.vue";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -164,7 +162,7 @@ onMounted(load);
       </button>
     </div>
 
-    <div v-if="auth.currentRole !== 'boarder'" class="grid gap-3 sm:grid-cols-2">
+    <section v-if="auth.currentRole !== 'boarder'" class="groupbox grid gap-3 sm:grid-cols-2">
       <label class="text-sm font-medium text-stone-700">
         {{ t("horses.filterName") }}
         <input
@@ -186,7 +184,7 @@ onMounted(load);
           </option>
         </select>
       </label>
-    </div>
+    </section>
 
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-else-if="error" class="text-sm text-red-600">{{ error }}</p>
@@ -238,11 +236,6 @@ onMounted(load);
       {{ t("horses.noFilterResults") }}
     </p>
     <p v-else class="text-sm text-stone-500">{{ t("horses.none") }}</p>
-
-    <template v-if="auth.currentRole === 'boarder'">
-      <FarrierView />
-      <ServiceOrdersView />
-    </template>
 
     <div
       v-if="showForm"

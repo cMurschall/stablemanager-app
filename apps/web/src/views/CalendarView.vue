@@ -52,6 +52,12 @@ function bookingsForDay(day: Date): Booking[] {
   return bookings.value.filter((b) => dayKey(new Date(b.startsAt)) === key);
 }
 
+function bookingsFor(day: Date, resourceId: string): Booking[] {
+  return bookingsForDay(day)
+    .filter((booking) => booking.resourceId === resourceId)
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
 async function loadMeta() {
   const r = await api<{ resources: Resource[] }>("/api/tenants/resources");
   resources.value = r.resources;
@@ -88,13 +94,13 @@ function nextWeek() {
   weekStart.value = addDays(weekStart.value, 7);
 }
 
-function openCreate(day?: Date) {
+function openCreate(day?: Date, resourceId?: string) {
   const start = day ? new Date(day) : new Date();
   start.setHours(10, 0, 0, 0);
   const end = new Date(start);
   end.setHours(11, 0, 0, 0);
   form.value = {
-    resourceId: trackResources.value[0]?.id ?? "",
+    resourceId: resourceId ?? trackResources.value[0]?.id ?? "",
     title: "Reitunterricht",
     startsAt: toLocalInputValue(start.toISOString()),
     endsAt: toLocalInputValue(end.toISOString()),
@@ -179,7 +185,7 @@ onMounted(async () => {
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <div class="space-y-3">
+    <div class="groupbox overflow-x-auto">
       <section
         v-for="day in days"
         :key="dayKey(day)"
@@ -200,7 +206,8 @@ onMounted(async () => {
           <button
             v-if="auth.canWrite"
             type="button"
-            class="text-xs text-brand-700"
+            class="text-xs font-medium text-brand-700"
+            :aria-label="`Buchung für ${day.toLocaleDateString('de-DE')} anlegen`"
             @click="openCreate(day)"
           >
             +

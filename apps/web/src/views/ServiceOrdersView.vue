@@ -132,7 +132,7 @@ onMounted(load);
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <section v-if="isTeam" class="space-y-3">
+    <section v-if="isTeam" class="groupbox">
       <div class="flex items-center justify-between gap-2">
         <h2 class="font-medium text-stone-800">{{ t("services.dailyTasks") }}</h2>
         <div class="flex items-center gap-2"><button class="btn-ghost" type="button" @click="moveDay(-1)">{{ t("services.previousDay") }}</button><input v-model="taskDate" type="date" class="field w-auto" @change="loadTasks" /><button class="btn-ghost" type="button" @click="moveDay(1)">{{ t("services.nextDay") }}</button></div>
@@ -146,7 +146,7 @@ onMounted(load);
       </ul>
     </section>
 
-    <section v-if="canManage" class="space-y-3">
+    <section v-if="canManage" class="groupbox">
       <h2 class="font-medium text-stone-800">{{ auth.isAdmin ? t("services.orders") : t("services.orders") }}</h2>
       <ul class="space-y-3">
         <li v-for="order in orders" :key="order.id" class="rounded-2xl border border-stone-200 bg-white p-4" :class="order.cancelledAt ? 'opacity-60' : ''">

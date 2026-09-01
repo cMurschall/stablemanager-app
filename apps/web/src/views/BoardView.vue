@@ -97,7 +97,9 @@ onMounted(load);
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <ul v-if="!loading && posts.length" class="space-y-3">
+    <section v-if="!loading" class="groupbox">
+      <h2 class="groupbox-title">Aktuelle Beiträge</h2>
+    <ul v-if="posts.length" class="space-y-3">
       <li
         v-for="post in posts"
         :key="post.id"
@@ -136,7 +138,8 @@ onMounted(load);
         </div>
       </li>
     </ul>
-    <p v-else-if="!loading" class="text-sm text-stone-500">{{ t("board.none") }}</p>
+    <p v-else class="text-sm text-stone-500">{{ t("board.none") }}</p>
+    </section>
 
     <div
       v-if="showForm"

@@ -143,7 +143,7 @@ onMounted(load);
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <section class="space-y-3">
+    <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("reminders.careEvents") }}</h2>
       <ul
         class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
@@ -182,7 +182,7 @@ onMounted(load);
       </ul>
     </section>
 
-    <section class="space-y-3">
+    <section class="groupbox">
       <div class="flex items-center justify-between">
         <h2 class="font-medium text-stone-800">
           {{ t("reminders.notifications") }}

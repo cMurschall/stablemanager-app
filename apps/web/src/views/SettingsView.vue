@@ -190,7 +190,7 @@ onMounted(load);
       </form>
     </section>
 
-    <section class="space-y-3">
+      <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("settings.members") }}</h2>
       <ul
         class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
@@ -211,7 +211,7 @@ onMounted(load);
       </ul>
     </section>
 
-    <section class="space-y-3">
+      <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("settings.trainingTypes") }}</h2>
       <form class="flex gap-2" @submit.prevent="createTrainingType">
         <input v-model="trainingTypeName" required class="field flex-1" :placeholder="t('settings.trainingTypeName')" />
@@ -226,7 +226,7 @@ onMounted(load);
       </ul>
     </section>
 
-    <section class="space-y-3">
+      <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("settings.invites") }}</h2>
       <form
         class="space-y-3 rounded-2xl border border-stone-200 bg-white p-4"

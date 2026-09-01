@@ -173,7 +173,7 @@ onMounted(load);
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <section class="space-y-3">
+    <section class="groupbox">
       <div class="flex items-center justify-between">
         <h2 class="font-medium text-stone-800">{{ t("housing.accommodations") }}</h2>
         <button
@@ -233,7 +233,7 @@ onMounted(load);
         </div>
       </form>
 
-      <ul class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white">
+      <ul class="divide-y divide-stone-200 rounded-xl border border-stone-200 bg-white">
         <li
           v-for="row in accommodations"
           :key="row.id"

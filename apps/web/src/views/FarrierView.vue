@@ -257,7 +257,7 @@ onMounted(load);
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
     <!-- Staff checklist -->
-    <section v-if="auth.canWrite" class="space-y-3">
+    <section v-if="auth.canWrite" class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("farrier.toPresent") }}</h2>
       <ul
         class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
@@ -296,7 +296,7 @@ onMounted(load);
     </section>
 
     <!-- Visits -->
-    <section class="space-y-3">
+    <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("farrier.visits") }}</h2>
       <div class="space-y-3">
         <article
@@ -405,7 +405,7 @@ onMounted(load);
     </section>
 
     <!-- Admin billing -->
-    <section v-if="auth.isAdmin" class="space-y-3">
+    <section v-if="auth.isAdmin" class="groupbox">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-medium text-stone-800">{{ t("farrier.billing") }}</h2>
         <div class="flex gap-1 rounded-lg bg-stone-100 p-1 text-sm">
