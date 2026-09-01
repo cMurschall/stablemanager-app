@@ -7,7 +7,7 @@ import {
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { accommodations, horseOwners, horses } from "../db/schema";
+import { accommodations, horseOwners, horses, users } from "../db/schema";
 import {
   listAccommodationHistory,
   recordAccommodationChange,
@@ -84,7 +84,14 @@ horseRoutes.get("/:id", async (c) => {
 
   const accommodationHistory = await listAccommodationHistory(db, horse.id);
   const ownerIds = await horseOwnerIds(db, c.get("tenantId"), [horse.id]);
-  return c.json({ horse: { ...horse, ownerUserIds: ownerIds.get(horse.id) ?? [] }, accommodationHistory });
+  const ownerNames = await db
+    .select({ name: users.name })
+    .from(horseOwners)
+    .innerJoin(users, eq(horseOwners.userId, users.id))
+    .where(and(eq(horseOwners.horseId, horse.id), eq(horseOwners.tenantId, c.get("tenantId"))))
+    .orderBy(asc(users.name))
+    .all();
+  return c.json({ horse: { ...horse, ownerUserIds: ownerIds.get(horse.id) ?? [], ownerNames: ownerNames.map((owner) => owner.name) }, accommodationHistory });
 });
 
 horseRoutes.get("/:id/accommodation-history", async (c) => {

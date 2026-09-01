@@ -21,6 +21,7 @@ const saving = ref(false);
 const movingHorseId = ref<string | null>(null);
 const search = ref("");
 const filterAccommodationId = ref("");
+const viewMode = ref<"list" | "herds">("list");
 
 const form = ref({
   name: "",
@@ -40,6 +41,18 @@ const filteredHorses = computed(() => {
       (!filterAccommodationId.value ||
         horse.accommodationId === filterAccommodationId.value),
   );
+});
+
+const herdGroups = computed(() => {
+  const groups = new Map<string, { id: string | null; label: string; horses: Horse[] }>();
+  for (const horse of filteredHorses.value) {
+    const id = horse.accommodationId;
+    const key = id ?? "unassigned";
+    const group = groups.get(key) ?? { id, label: accommodationLabel(id), horses: [] };
+    group.horses.push(horse);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "de"));
 });
 
 async function load() {
@@ -186,11 +199,16 @@ onMounted(load);
       </label>
     </section>
 
+    <div class="flex w-fit gap-1 rounded-lg bg-stone-100 p-1 text-sm" role="tablist" aria-label="Pferdeansicht">
+      <button type="button" role="tab" class="rounded-lg px-3 py-1.5 text-sm" :aria-selected="viewMode === 'list'" :class="viewMode === 'list' ? 'bg-white font-medium shadow-sm' : 'text-stone-600'" @click="viewMode = 'list'">{{ t("horses.viewList") }}</button>
+      <button type="button" role="tab" class="rounded-lg px-3 py-1.5 text-sm" :aria-selected="viewMode === 'herds'" :class="viewMode === 'herds' ? 'bg-white font-medium shadow-sm' : 'text-stone-600'" @click="viewMode = 'herds'">{{ t("horses.viewHerds") }}</button>
+    </div>
+
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-else-if="error" class="text-sm text-red-600">{{ error }}</p>
 
     <ul
-      v-else-if="filteredHorses.length"
+      v-else-if="filteredHorses.length && viewMode === 'list'"
       class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
     >
       <li
@@ -232,6 +250,21 @@ onMounted(load);
         </label>
       </li>
     </ul>
+    <section v-else-if="filteredHorses.length" class="space-y-3">
+      <article v-for="group in herdGroups" :key="group.id ?? 'unassigned'" class="groupbox">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="groupbox-title">{{ group.label }}</h2>
+          <span class="text-xs text-stone-500">{{ t("horses.horsesCount", { n: group.horses.length }) }}</span>
+        </div>
+        <ul class="divide-y divide-stone-100 rounded-xl border border-stone-100">
+          <li v-for="horse in group.horses" :key="horse.id">
+            <RouterLink :to="`/horses/${horse.id}`" class="flex items-center justify-between gap-3 px-3 py-2 hover:bg-brand-50">
+              <span class="font-medium text-stone-900">{{ horse.name }}</span><span class="text-stone-400">›</span>
+            </RouterLink>
+          </li>
+        </ul>
+      </article>
+    </section>
     <p v-else-if="horses.length" class="text-sm text-stone-500">
       {{ t("horses.noFilterResults") }}
     </p>

@@ -171,7 +171,8 @@ function labelAccommodation(id: string | null) {
   return `${row.name} (${t(`accommodationKind.${row.kind}`)})`;
 }
 
-function labelOwners(ids: string[]) {
+function labelOwners(ids: string[], names?: string[]) {
+  if (names?.length) return names.join(", ");
   if (!ids.length) return "—";
   return ids.map((id) => members.value.find((m) => m.userId === id)?.name ?? id).join(", ");
 }
@@ -300,7 +301,7 @@ onMounted(load);
           </div>
           <div>
             <dt class="text-stone-500">{{ t("horses.owner") }}</dt>
-            <dd class="font-medium">{{ labelOwners(horse.ownerUserIds) }}</dd>
+            <dd class="font-medium">{{ labelOwners(horse.ownerUserIds, horse.ownerNames) }}</dd>
           </div>
           <div>
             <dt class="text-stone-500">{{ t("horses.accommodation") }}</dt>

@@ -15,6 +15,7 @@ export type Horse = {
   sex: HorseSex | null;
   birthYear: number | null;
   ownerUserIds: string[];
+  ownerNames?: string[];
   accommodationId: string | null;
   notes: string | null;
   createdAt: string;
