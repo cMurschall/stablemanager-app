@@ -5,8 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "stablemanager"
-database_id = "00000000-0000-0000-0000-000000000001"
+database_name = "stablemanager-staging"
+database_id = "57fa650d-b427-4387-a468-0a688634b1ef"
 migrations_dir = "migrations"
 
 [assets]
