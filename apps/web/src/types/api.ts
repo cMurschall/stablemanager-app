@@ -14,7 +14,7 @@ export type Horse = {
   feifId: string | null;
   sex: HorseSex | null;
   birthYear: number | null;
-  ownerUserId: string | null;
+  ownerUserIds: string[];
   accommodationId: string | null;
   notes: string | null;
   createdAt: string;
@@ -176,7 +176,6 @@ export type FarrierSignup = {
   createdBy: string | null;
   createdAt: string;
   horseName: string;
-  ownerUserId: string | null;
   ownerName: string | null;
   visitStartsAt?: string;
   visitFarrierName?: string | null;

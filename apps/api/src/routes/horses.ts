@@ -7,7 +7,7 @@ import {
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { horses } from "../db/schema";
+import { horseOwners, horses } from "../db/schema";
 import {
   listAccommodationHistory,
   recordAccommodationChange,
@@ -16,6 +16,7 @@ import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { canWriteStaff, isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
+import { horseOwnerAccess, horseOwnerIds, isHorseOwner, ownersAreTenantMembers } from "../lib/horseOwnership";
 
 export const horseRoutes = new Hono<{
   Bindings: Env;
@@ -36,7 +37,7 @@ horseRoutes.get("/", async (c) => {
 
   const conditions = [eq(horses.tenantId, tenantId)];
   if (isBoarderOnly(role)) {
-    conditions.push(eq(horses.ownerUserId, userId));
+    conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
 
   const rows = await db
@@ -48,6 +49,8 @@ horseRoutes.get("/", async (c) => {
     .offset(pagination.offset)
     .all();
 
+  const ownerIds = await horseOwnerIds(db, tenantId, rows.map((horse) => horse.id));
+
   const countRow = await db
     .select({ count: sql<number>`count(*)` })
     .from(horses)
@@ -55,7 +58,7 @@ horseRoutes.get("/", async (c) => {
     .get();
 
   return c.json({
-    horses: rows,
+    horses: rows.map((horse) => ({ ...horse, ownerUserIds: ownerIds.get(horse.id) ?? [] })),
     total: countRow?.count ?? 0,
     limit: pagination.limit,
     offset: pagination.offset,
@@ -75,12 +78,13 @@ horseRoutes.get("/:id", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
+  if (isBoarderOnly(c.get("role")) && !(await isHorseOwner(db, c.get("tenantId"), horse.id, c.get("userId")))) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
   const accommodationHistory = await listAccommodationHistory(db, horse.id);
-  return c.json({ horse, accommodationHistory });
+  const ownerIds = await horseOwnerIds(db, c.get("tenantId"), [horse.id]);
+  return c.json({ horse: { ...horse, ownerUserIds: ownerIds.get(horse.id) ?? [] }, accommodationHistory });
 });
 
 horseRoutes.get("/:id/accommodation-history", async (c) => {
@@ -96,7 +100,7 @@ horseRoutes.get("/:id/accommodation-history", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) {
+  if (isBoarderOnly(c.get("role")) && !(await isHorseOwner(db, c.get("tenantId"), horse.id, c.get("userId")))) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
@@ -118,13 +122,20 @@ horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
     feifId: body.data.feifId ?? null,
     sex: body.data.sex ?? null,
     birthYear: body.data.birthYear ?? null,
-    ownerUserId: body.data.ownerUserId ?? null,
     accommodationId: body.data.accommodationId ?? null,
     notes: body.data.notes ?? null,
   };
 
+  const ownerUserIds = [...new Set(body.data.ownerUserIds)];
+  if (!(await ownersAreTenantMembers(db, row.tenantId, ownerUserIds))) {
+    return c.json({ error: "Besitzer muss Mitglied dieses Hofs sein" }, 400);
+  }
+
   try {
     await db.insert(horses).values(row);
+    if (ownerUserIds.length) {
+      await db.insert(horseOwners).values(ownerUserIds.map((userId) => ({ horseId: row.id, tenantId: row.tenantId, userId })));
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes("UNIQUE") || msg.includes("unique")) {
@@ -143,7 +154,7 @@ horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
     });
   }
 
-  return c.json({ horse: row }, 201);
+  return c.json({ horse: { ...row, ownerUserIds } }, 201);
 });
 
 horseRoutes.patch("/:id", async (c) => {
@@ -169,11 +180,24 @@ horseRoutes.patch("/:id", async (c) => {
   }
 
   const updatedAt = nowIso();
+  const ownerUserIds = body.data.ownerUserIds === undefined
+    ? undefined
+    : [...new Set(body.data.ownerUserIds)];
+  if (ownerUserIds && !(await ownersAreTenantMembers(db, existing.tenantId, ownerUserIds))) {
+    return c.json({ error: "Besitzer muss Mitglied dieses Hofs sein" }, 400);
+  }
+  const { ownerUserIds: _ownerUserIds, ...horsePatch } = body.data;
   try {
     await db
       .update(horses)
-      .set({ ...body.data, updatedAt })
+      .set({ ...horsePatch, updatedAt })
       .where(eq(horses.id, existing.id));
+    if (ownerUserIds !== undefined) {
+      await db.delete(horseOwners).where(eq(horseOwners.horseId, existing.id));
+      if (ownerUserIds.length) {
+        await db.insert(horseOwners).values(ownerUserIds.map((userId) => ({ horseId: existing.id, tenantId: existing.tenantId, userId })));
+      }
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes("UNIQUE") || msg.includes("unique")) {
@@ -196,7 +220,8 @@ horseRoutes.patch("/:id", async (c) => {
     });
   }
 
-  return c.json({ horse: { ...existing, ...body.data, updatedAt } });
+  const responseOwnerIds = ownerUserIds ?? (await horseOwnerIds(db, existing.tenantId, [existing.id])).get(existing.id) ?? [];
+  return c.json({ horse: { ...existing, ...horsePatch, ownerUserIds: responseOwnerIds, updatedAt } });
 });
 
 horseRoutes.delete("/:id", requireRoles("hof_admin", "staff"), async (c) => {

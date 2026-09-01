@@ -95,7 +95,7 @@ export const CreateHorseSchema = z.object({
   feifId: FeifIdSchema.optional().nullable(),
   sex: HorseSexSchema.optional().nullable(),
   birthYear: z.number().int().min(1980).max(2100).optional().nullable(),
-  ownerUserId: z.string().uuid().optional().nullable(),
+  ownerUserIds: z.array(z.string().uuid()).max(50).optional().default([]),
   accommodationId: z.string().uuid().optional().nullable(),
   notes: z.string().max(4000).optional().nullable(),
 });

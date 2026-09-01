@@ -13,6 +13,7 @@ import { createDb } from "../db/client";
 import {
   farrierSignups,
   farrierVisits,
+  horseOwners,
   horses,
   memberships,
   notifications,
@@ -22,6 +23,7 @@ import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { canWriteStaff, isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
+import { horseOwnerAccess, isHorseOwner } from "../lib/horseOwnership";
 
 export const farrierRoutes = new Hono<{
   Bindings: Env;
@@ -44,7 +46,7 @@ async function loadVisitSignups(
     eq(farrierSignups.visitId, visitId),
   ];
   if (isBoarderOnly(role)) {
-    conditions.push(eq(horses.ownerUserId, userId));
+    conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
 
   return db
@@ -62,12 +64,15 @@ async function loadVisitSignups(
       createdBy: farrierSignups.createdBy,
       createdAt: farrierSignups.createdAt,
       horseName: horses.name,
-      ownerUserId: horses.ownerUserId,
-      ownerName: users.name,
+      ownerName: sql<string | null>`(
+        select group_concat(${users.name}, ', ')
+        from ${horseOwners}
+        inner join ${users} on ${horseOwners.userId} = ${users.id}
+        where ${horseOwners.horseId} = ${horses.id}
+      )`,
     })
     .from(farrierSignups)
     .innerJoin(horses, eq(farrierSignups.horseId, horses.id))
-    .leftJoin(users, eq(horses.ownerUserId, users.id))
     .where(and(...conditions))
     .orderBy(asc(horses.name))
     .all();
@@ -344,7 +349,7 @@ farrierRoutes.post("/visits/:id/signups", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
-  if (isBoarderOnly(role) && horse.ownerUserId !== userId) {
+  if (isBoarderOnly(role) && !(await isHorseOwner(db, tenantId, horse.id, userId))) {
     return c.json({ error: "Keine Berechtigung für dieses Pferd" }, 403);
   }
 
@@ -400,7 +405,6 @@ farrierRoutes.patch("/signups/:id", async (c) => {
   const row = await db
     .select({
       signup: farrierSignups,
-      ownerUserId: horses.ownerUserId,
     })
     .from(farrierSignups)
     .innerJoin(horses, eq(farrierSignups.horseId, horses.id))
@@ -417,7 +421,7 @@ farrierRoutes.patch("/signups/:id", async (c) => {
   }
 
   if (isBoarderOnly(role)) {
-    if (row.ownerUserId !== userId) {
+    if (!(await isHorseOwner(db, tenantId, row.signup.horseId, userId))) {
       return c.json({ error: "Keine Berechtigung" }, 403);
     }
     if (row.signup.presentedAt) {
@@ -612,7 +616,7 @@ farrierRoutes.get("/signups", async (c) => {
     conditions.push(isNotNull(farrierSignups.billedAt));
   }
   if (isBoarderOnly(role)) {
-    conditions.push(eq(horses.ownerUserId, userId));
+    conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
 
   const rows = await db
@@ -630,8 +634,12 @@ farrierRoutes.get("/signups", async (c) => {
       createdBy: farrierSignups.createdBy,
       createdAt: farrierSignups.createdAt,
       horseName: horses.name,
-      ownerUserId: horses.ownerUserId,
-      ownerName: users.name,
+      ownerName: sql<string | null>`(
+        select group_concat(${users.name}, ', ')
+        from ${horseOwners}
+        inner join ${users} on ${horseOwners.userId} = ${users.id}
+        where ${horseOwners.horseId} = ${horses.id}
+      )`,
       visitStartsAt: farrierVisits.startsAt,
       visitFarrierName: farrierVisits.farrierName,
       visitStatus: farrierVisits.status,
@@ -639,7 +647,6 @@ farrierRoutes.get("/signups", async (c) => {
     .from(farrierSignups)
     .innerJoin(horses, eq(farrierSignups.horseId, horses.id))
     .innerJoin(farrierVisits, eq(farrierSignups.visitId, farrierVisits.id))
-    .leftJoin(users, eq(horses.ownerUserId, users.id))
     .where(and(...conditions))
     .orderBy(desc(farrierVisits.startsAt), asc(horses.name))
     .all();

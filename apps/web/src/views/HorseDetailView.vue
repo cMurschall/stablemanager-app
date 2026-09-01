@@ -37,7 +37,7 @@ const form = ref({
   feifId: "",
   sex: "" as "" | HorseSex,
   birthYear: "" as string | number,
-  ownerUserId: "",
+  ownerUserIds: [] as string[],
   accommodationId: "",
   notes: "",
 });
@@ -99,7 +99,7 @@ function syncForm() {
     feifId: horse.value.feifId ?? "",
     sex: horse.value.sex ?? "",
     birthYear: horse.value.birthYear ?? "",
-    ownerUserId: horse.value.ownerUserId ?? "",
+    ownerUserIds: [...horse.value.ownerUserIds],
     accommodationId: horse.value.accommodationId ?? "",
     notes: horse.value.notes ?? "",
   };
@@ -129,7 +129,7 @@ async function save() {
         feifId: form.value.feifId.trim() || null,
         sex: form.value.sex || null,
         birthYear: Number.isFinite(birthYear) ? birthYear : null,
-        ownerUserId: form.value.ownerUserId || null,
+        ownerUserIds: form.value.ownerUserIds,
         accommodationId: form.value.accommodationId || null,
         notes: form.value.notes.trim() || null,
       }),
@@ -171,9 +171,9 @@ function labelAccommodation(id: string | null) {
   return `${row.name} (${t(`accommodationKind.${row.kind}`)})`;
 }
 
-function labelOwner(id: string | null) {
-  if (!id) return "—";
-  return members.value.find((m) => m.userId === id)?.name ?? id;
+function labelOwners(ids: string[]) {
+  if (!ids.length) return "—";
+  return ids.map((id) => members.value.find((m) => m.userId === id)?.name ?? id).join(", ");
 }
 
 function historyLabel(entry: AccommodationHistoryEntry) {
@@ -251,8 +251,7 @@ onMounted(load);
         </label>
         <label class="block text-sm font-medium">
           {{ t("horses.owner") }}
-          <select v-model="form.ownerUserId" class="field">
-            <option value="">—</option>
+          <select v-model="form.ownerUserIds" multiple class="field min-h-28">
             <option v-for="m in members" :key="m.userId" :value="m.userId">
               {{ m.name }} ({{ m.email }})
             </option>
@@ -301,7 +300,7 @@ onMounted(load);
           </div>
           <div>
             <dt class="text-stone-500">{{ t("horses.owner") }}</dt>
-            <dd class="font-medium">{{ labelOwner(horse.ownerUserId) }}</dd>
+            <dd class="font-medium">{{ labelOwners(horse.ownerUserIds) }}</dd>
           </div>
           <div>
             <dt class="text-stone-500">{{ t("horses.accommodation") }}</dt>

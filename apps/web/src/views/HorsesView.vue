@@ -24,7 +24,7 @@ const form = ref({
   feifId: "",
   sex: "" as "" | HorseSex,
   birthYear: "" as string | number,
-  ownerUserId: "",
+  ownerUserIds: [] as string[],
   accommodationId: "",
   notes: "",
 });
@@ -60,7 +60,7 @@ function openCreate() {
     feifId: "",
     sex: "",
     birthYear: "",
-    ownerUserId: "",
+    ownerUserIds: [],
     accommodationId: "",
     notes: "",
   };
@@ -91,7 +91,7 @@ async function createHorse() {
         feifId: form.value.feifId.trim() || null,
         sex: form.value.sex || null,
         birthYear: Number.isFinite(birthYear) ? birthYear : null,
-        ownerUserId: form.value.ownerUserId || null,
+        ownerUserIds: form.value.ownerUserIds,
         accommodationId: form.value.accommodationId || null,
         notes: form.value.notes.trim() || null,
       }),
@@ -205,8 +205,7 @@ onMounted(load);
           </label>
           <label class="text-sm font-medium">
             {{ t("horses.owner") }}
-            <select v-model="form.ownerUserId" class="field">
-              <option value="">—</option>
+            <select v-model="form.ownerUserIds" multiple class="field min-h-28">
               <option v-for="m in members" :key="m.userId" :value="m.userId">
                 {{ m.name }} ({{ m.email }})
               </option>

@@ -8,6 +8,7 @@ import {
   notifications,
 } from "../db/schema";
 import { id, nowIso } from "../lib/crypto";
+import { horseOwnerIds } from "../lib/horseOwnership";
 
 const TYPE_LABEL: Record<string, string> = {
   farrier: "Hufschmied",
@@ -30,7 +31,6 @@ export async function runCareReminders(env: Env): Promise<{ created: number }> {
       type: careEvents.type,
       dueAt: careEvents.dueAt,
       horseName: horses.name,
-      ownerUserId: horses.ownerUserId,
     })
     .from(careEvents)
     .innerJoin(horses, eq(careEvents.horseId, horses.id))
@@ -61,6 +61,7 @@ export async function runCareReminders(env: Env): Promise<{ created: number }> {
       .from(memberships)
       .where(eq(memberships.tenantId, event.tenantId))
       .all();
+    const ownerIds = (await horseOwnerIds(db, event.tenantId, [event.horseId])).get(event.horseId) ?? [];
 
     const label = TYPE_LABEL[event.type] ?? event.type;
     const title = `${label}: ${event.horseName}`;
@@ -69,7 +70,7 @@ export async function runCareReminders(env: Env): Promise<{ created: number }> {
     for (const member of recipients) {
       if (
         member.role === "boarder" &&
-        member.userId !== event.ownerUserId
+        !ownerIds.includes(member.userId)
       ) {
         continue;
       }

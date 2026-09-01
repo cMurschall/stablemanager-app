@@ -171,6 +171,29 @@ export const horses = sqliteTable(
   ],
 );
 
+/** Equal co-owners of a horse. tenantId keeps ownership checks tenant-scoped. */
+export const horseOwners = sqliteTable(
+  "horse_owners",
+  {
+    horseId: text("horse_id")
+      .notNull()
+      .references(() => horses.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    uniqueIndex("horse_owners_horse_user_uidx").on(t.horseId, t.userId),
+    index("horse_owners_tenant_user_idx").on(t.tenantId, t.userId),
+  ],
+);
+
 /** Periods a horse spent in an accommodation (ended_at null = current) */
 export const horseAccommodationHistory = sqliteTable(
   "horse_accommodation_history",

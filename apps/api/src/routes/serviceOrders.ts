@@ -21,6 +21,7 @@ import { id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
+import { horseOwnerAccess, isHorseOwner } from "../lib/horseOwnership";
 
 export const serviceOrderRoutes = new Hono<{
   Bindings: Env;
@@ -75,19 +76,14 @@ async function canManageOrder(c: any, order: typeof serviceOrders.$inferSelect):
   if (c.get("role") === "hof_admin") return true;
   if (!isBoarderOnly(c.get("role"))) return false;
   const db = createDb(c.env);
-  const horse = await db
-    .select({ ownerUserId: horses.ownerUserId })
-    .from(horses)
-    .where(and(eq(horses.id, order.horseId), eq(horses.tenantId, c.get("tenantId"))))
-    .get();
-  return horse?.ownerUserId === c.get("userId");
+  return isHorseOwner(db, c.get("tenantId"), order.horseId, c.get("userId"));
 }
 
 serviceOrderRoutes.get("/", async (c) => {
   if (c.get("role") === "staff") return c.json({ error: "Keine Berechtigung" }, 403);
   const db = createDb(c.env);
   const conditions = [eq(serviceOrders.tenantId, c.get("tenantId"))];
-  if (isBoarderOnly(c.get("role"))) conditions.push(eq(horses.ownerUserId, c.get("userId")));
+  if (isBoarderOnly(c.get("role"))) conditions.push(horseOwnerAccess(horses.id, c.get("tenantId"), c.get("userId")));
   const rows = await db
     .select({
       id: serviceOrders.id,
@@ -125,7 +121,7 @@ serviceOrderRoutes.post("/", requireRoles("hof_admin", "boarder"), async (c) => 
   const db = createDb(c.env);
   const horse = await db.select().from(horses).where(and(eq(horses.id, body.data.horseId), eq(horses.tenantId, c.get("tenantId")))).get();
   if (!horse) return c.json({ error: "Pferd nicht gefunden" }, 404);
-  if (isBoarderOnly(c.get("role")) && horse.ownerUserId !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+  if (isBoarderOnly(c.get("role")) && !(await isHorseOwner(db, c.get("tenantId"), horse.id, c.get("userId")))) return c.json({ error: "Keine Berechtigung" }, 403);
   const tenant = await db.select().from(tenants).where(eq(tenants.id, c.get("tenantId"))).get();
   if (!tenant || body.data.dailyCount > tenant.maxDailyServiceTasks) return c.json({ error: "TÃ¤gliche HÃ¤ufigkeit Ã¼berschreitet das Hof-Limit" }, 400);
   const endDate = body.data.endDate ?? addLocalDays(body.data.startDate, body.data.durationDays! - 1);

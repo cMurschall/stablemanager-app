@@ -13,6 +13,7 @@ import { addDays, id, nowIso } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
+import { horseOwnerAccess } from "../lib/horseOwnership";
 
 export const careRoutes = new Hono<{
   Bindings: Env;
@@ -40,7 +41,7 @@ careRoutes.get("/", async (c) => {
   }
 
   if (isBoarderOnly(role)) {
-    conditions.push(eq(horses.ownerUserId, userId));
+    conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
 
   const rows = await db

@@ -11,6 +11,7 @@ import { id } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { isBoarderOnly, requireRoles } from "../lib/rbac";
 import { authMiddleware } from "../middleware/auth";
+import { horseOwnerAccess } from "../lib/horseOwnership";
 
 const LocalDateRe = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -74,7 +75,7 @@ trainingRoutes.get("/", async (c) => {
   }
 
   if (isBoarderOnly(role)) {
-    conditions.push(eq(horses.ownerUserId, userId));
+    conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
 
   const rows = await db
