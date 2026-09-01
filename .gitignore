@@ -149,4 +149,4 @@ apps/api/.wrangler/
 apps/*/cookies.txt
 *.local.json
 
-apps/api/seed-horses.sql
+seed-horses.sql

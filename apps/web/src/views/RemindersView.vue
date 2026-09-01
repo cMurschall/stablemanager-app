@@ -9,6 +9,7 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import HorseSelect from "@/components/HorseSelect.vue";
 import type { CareEvent, Horse, Notification } from "@/types/api";
 
 const { t } = useI18n();
@@ -249,11 +250,7 @@ onMounted(load);
         <div class="mt-4 grid gap-3">
           <label class="text-sm font-medium">
             {{ t("reminders.horse") }}
-            <select v-model="form.horseId" required class="field mt-1">
-              <option v-for="h in horses" :key="h.id" :value="h.id">
-                {{ h.name }}
-              </option>
-            </select>
+            <HorseSelect v-model="form.horseId" :horses="horses" required />
           </label>
           <label class="text-sm font-medium">
             {{ t("reminders.type") }}

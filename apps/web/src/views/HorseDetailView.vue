@@ -261,7 +261,7 @@ onMounted(load);
           {{ t("horses.accommodation") }}
           <select v-model="form.accommodationId" class="field">
             <option value="">—</option>
-            <option v-for="s in accommodations" :key="s.id" :value="s.id">
+            <option v-for="s in accommodations.filter((row) => row.active || row.id === form.accommodationId)" :key="s.id" :value="s.id">
               {{ s.name }} ({{ t(`accommodationKind.${s.kind}`) }})
             </option>
           </select>
@@ -365,7 +365,7 @@ onMounted(load);
               class="border-l-2 border-brand-200 pl-3 text-sm"
             >
               <p class="font-medium text-stone-800">
-                {{ t(`training.type.${entry.type}`) }}
+                {{ entry.type }}
               </p>
               <p class="mt-0.5 text-xs text-stone-500">
                 {{ formatLocalDate(entry.date) }}

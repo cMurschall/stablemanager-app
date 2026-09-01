@@ -1,9 +1,15 @@
 import { Hono } from "hono";
-import { and, asc, eq, gte, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { CreateBookingSchema, UpdateBookingSchema } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { bookings, horses, resources } from "../db/schema";
+import {
+  bookingParticipants,
+  bookings,
+  memberships,
+  resources,
+  users,
+} from "../db/schema";
 import { id } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { requireRoles } from "../lib/rbac";
@@ -15,6 +21,30 @@ export const bookingRoutes = new Hono<{
 }>();
 
 bookingRoutes.use("*", authMiddleware);
+
+async function validateParticipants(
+  db: ReturnType<typeof createDb>,
+  tenantId: string,
+  participantUserIds: string[],
+) {
+  const ids = [...new Set(participantUserIds)];
+  if (!ids.length) return ids;
+
+  const rows = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.tenantId, tenantId),
+        inArray(memberships.userId, ids),
+        inArray(memberships.role, ["staff", "boarder"]),
+      ),
+    )
+    .all();
+
+  if (rows.length !== ids.length) return null;
+  return ids;
+}
 
 bookingRoutes.get("/", async (c) => {
   const from = c.req.query("from");
@@ -53,23 +83,59 @@ bookingRoutes.get("/", async (c) => {
       title: bookings.title,
       startsAt: bookings.startsAt,
       endsAt: bookings.endsAt,
-      horseId: bookings.horseId,
       notes: bookings.notes,
       createdBy: bookings.createdBy,
       createdAt: bookings.createdAt,
-      horseName: horses.name,
       resourceName: resources.name,
       resourceKind: resources.kind,
     })
     .from(bookings)
-    .leftJoin(horses, eq(bookings.horseId, horses.id))
     .innerJoin(resources, eq(bookings.resourceId, resources.id))
     .where(and(...conditions))
     .orderBy(asc(bookings.startsAt))
     .limit(200)
     .all();
 
-  return c.json({ bookings: rows });
+  const participantRows = rows.length
+    ? await db
+        .select({
+          bookingId: bookingParticipants.bookingId,
+          userId: bookingParticipants.userId,
+          name: users.name,
+        })
+        .from(bookingParticipants)
+        .innerJoin(users, eq(bookingParticipants.userId, users.id))
+        .where(inArray(bookingParticipants.bookingId, rows.map((row) => row.id)))
+        .all()
+    : [];
+  const participantsByBooking = new Map<string, typeof participantRows>();
+  for (const participant of participantRows) {
+    const list = participantsByBooking.get(participant.bookingId) ?? [];
+    list.push(participant);
+    participantsByBooking.set(participant.bookingId, list);
+  }
+
+  const isBoarder = c.get("role") === "boarder";
+  const userId = c.get("userId");
+  return c.json({
+    bookings: rows.map((row) => {
+      const participants = participantsByBooking.get(row.id) ?? [];
+      const isParticipant = participants.some((participant) => participant.userId === userId);
+      const showDetails = !isBoarder || isParticipant;
+      return {
+        ...row,
+        title: showDetails ? row.title : "Belegt",
+        notes: showDetails ? row.notes : null,
+        participantUserIds: showDetails
+          ? participants.map((participant) => participant.userId)
+          : [],
+        participantNames: showDetails
+          ? participants.map((participant) => participant.name)
+          : [],
+        isParticipant,
+      };
+    }),
+  });
 });
 
 bookingRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
@@ -98,20 +164,13 @@ bookingRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
     return c.json({ error: "Ressource nicht gefunden" }, 404);
   }
 
-  if (body.data.horseId) {
-    const horse = await db
-      .select()
-      .from(horses)
-      .where(
-        and(
-          eq(horses.id, body.data.horseId),
-          eq(horses.tenantId, c.get("tenantId")),
-        ),
-      )
-      .get();
-    if (!horse) {
-      return c.json({ error: "Pferd nicht gefunden" }, 404);
-    }
+  const participantUserIds = await validateParticipants(
+    db,
+    c.get("tenantId"),
+    body.data.participantUserIds,
+  );
+  if (!participantUserIds) {
+    return c.json({ error: "Teilnehmende mÃ¼ssen Mitarbeiter oder Einsteller dieses Hofs sein" }, 400);
   }
 
   const overlap = await db
@@ -138,12 +197,17 @@ bookingRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
     title: body.data.title,
     startsAt: body.data.startsAt,
     endsAt: body.data.endsAt,
-    horseId: body.data.horseId ?? null,
+    horseId: null,
     notes: body.data.notes ?? null,
     createdBy: c.get("userId"),
   };
   await db.insert(bookings).values(row);
-  return c.json({ booking: row }, 201);
+  if (participantUserIds.length) {
+    await db.insert(bookingParticipants).values(
+      participantUserIds.map((userId) => ({ bookingId: row.id, userId })),
+    );
+  }
+  return c.json({ booking: { ...row, participantUserIds } }, 201);
 });
 
 bookingRoutes.patch("/:id", requireRoles("hof_admin", "staff"), async (c) => {
@@ -195,8 +259,27 @@ bookingRoutes.patch("/:id", requireRoles("hof_admin", "staff"), async (c) => {
     return c.json({ error: "Zeitraum bereits belegt" }, 409);
   }
 
-  await db.update(bookings).set(body.data).where(eq(bookings.id, existing.id));
-  return c.json({ booking: { ...existing, ...body.data } });
+  const { participantUserIds, ...bookingPatch } = body.data;
+  if (participantUserIds !== undefined) {
+    const validParticipants = await validateParticipants(
+      db,
+      c.get("tenantId"),
+      participantUserIds,
+    );
+    if (!validParticipants) {
+      return c.json({ error: "Teilnehmende mÃ¼ssen Mitarbeiter oder Einsteller dieses Hofs sein" }, 400);
+    }
+    await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, existing.id));
+    if (validParticipants.length) {
+      await db.insert(bookingParticipants).values(
+        validParticipants.map((userId) => ({ bookingId: existing.id, userId })),
+      );
+    }
+  }
+  if (Object.keys(bookingPatch).length) {
+    await db.update(bookings).set(bookingPatch).where(eq(bookings.id, existing.id));
+  }
+  return c.json({ booking: { ...existing, ...bookingPatch, participantUserIds } });
 });
 
 bookingRoutes.delete("/:id", requireRoles("hof_admin", "staff"), async (c) => {

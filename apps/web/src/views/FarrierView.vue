@@ -9,6 +9,7 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import HorseSelect from "@/components/HorseSelect.vue";
 import type { FarrierSignup, FarrierVisit, Horse } from "@/types/api";
 
 const { t } = useI18n();
@@ -563,19 +564,11 @@ onMounted(load);
         <div class="mt-4 grid gap-3">
           <label class="text-sm font-medium">
             {{ t("farrier.horse") }}
-            <select
+            <HorseSelect
               v-model="signupForm.horseId"
+              :horses="availableHorses"
               required
-              class="field mt-1"
-            >
-              <option
-                v-for="h in availableHorses"
-                :key="h.id"
-                :value="h.id"
-              >
-                {{ h.name }}
-              </option>
-            </select>
+            />
           </label>
           <label class="text-sm font-medium">
             {{ t("farrier.shoeing") }}

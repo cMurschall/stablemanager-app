@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+/** Runtime IDs are UUIDs; the local fixture also contains legacy 32-digit hex IDs. */
+export const EntityIdSchema = z.string().trim().refine(
+  (value) => z.string().uuid().safeParse(value).success || /^[a-f\d]{32}$/i.test(value),
+  "Ungültige ID",
+);
+
 export const RoleSchema = z.enum(["hof_admin", "staff", "boarder"]);
 export type Role = z.infer<typeof RoleSchema>;
 
@@ -42,7 +48,7 @@ export const MagicLinkRequestSchema = z.object({
 });
 
 export const SwitchTenantSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: EntityIdSchema,
 });
 
 export const CreateInviteSchema = z.object({
@@ -66,7 +72,7 @@ const LocalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "UngÃ¼ltiges D
 
 export const CreateServiceOrderSchema = z
   .object({
-    horseId: z.string().uuid(),
+    horseId: EntityIdSchema,
     title: z.string().trim().min(1).max(160),
     instructions: z.string().trim().min(1).max(4000),
     startDate: LocalDateSchema,
@@ -95,8 +101,8 @@ export const CreateHorseSchema = z.object({
   feifId: FeifIdSchema.optional().nullable(),
   sex: HorseSexSchema.optional().nullable(),
   birthYear: z.number().int().min(1980).max(2100).optional().nullable(),
-  ownerUserIds: z.array(z.string().uuid()).max(50).optional().default([]),
-  accommodationId: z.string().uuid().optional().nullable(),
+  ownerUserIds: z.array(EntityIdSchema).max(50).optional().default([]),
+  accommodationId: EntityIdSchema.optional().nullable(),
   notes: z.string().max(4000).optional().nullable(),
 });
 
@@ -108,6 +114,7 @@ export const CreateAccommodationSchema = z
     kind: AccommodationKindSchema,
     /** Places: Box default 1; Paddockbox typically >1 */
     capacity: z.number().int().min(1).max(200).optional().nullable(),
+    active: z.boolean().optional(),
     notes: z.string().max(2000).optional().nullable(),
   })
   .superRefine((data, ctx) => {
@@ -131,6 +138,7 @@ export const UpdateAccommodationSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   kind: AccommodationKindSchema.optional(),
   capacity: z.number().int().min(1).max(200).optional().nullable(),
+  active: z.boolean().optional(),
   notes: z.string().max(2000).optional().nullable(),
 });
 
@@ -147,12 +155,12 @@ export const CreateResourceSchema = z.object({
 export const UpdateResourceSchema = CreateResourceSchema.partial();
 
 export const CreateBookingSchema = z.object({
-  resourceId: z.string().uuid(),
+  resourceId: EntityIdSchema,
   title: z.string().trim().min(1).max(160),
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
-  horseId: z.string().uuid().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  participantUserIds: z.array(EntityIdSchema).max(50).optional().default([]),
 });
 
 export const UpdateBookingSchema = CreateBookingSchema.partial();
@@ -167,7 +175,7 @@ export const CreateBulletinPostSchema = z.object({
 export const UpdateBulletinPostSchema = CreateBulletinPostSchema.partial();
 
 export const CreateCareEventSchema = z.object({
-  horseId: z.string().uuid(),
+  horseId: EntityIdSchema,
   type: CareEventTypeSchema,
   dueAt: z.string().datetime(),
   intervalDays: z.number().int().min(1).max(730).optional().nullable(),
@@ -222,7 +230,7 @@ export const UpdateFarrierVisitSchema = z.object({
 });
 
 export const CreateFarrierSignupSchema = z.object({
-  horseId: z.string().uuid(),
+  horseId: EntityIdSchema,
   shoeing: FarrierShoeingSchema,
   shoeingNotes: z.string().max(2000).optional().nullable(),
   presentation: FarrierPresentationSchema,
@@ -238,16 +246,15 @@ export const BillFarrierSignupSchema = z.object({
   billed: z.boolean().optional().default(true),
 });
 
-export const TrainingLogTypeSchema = z.enum([
-  "longe",
-  "ridden",
-  "trail",
-  "rental",
-]);
+export const TrainingLogTypeSchema = z.string().trim().min(1).max(80);
 export type TrainingLogType = z.infer<typeof TrainingLogTypeSchema>;
 
+export const CreateTrainingTypeSchema = z.object({
+  name: TrainingLogTypeSchema,
+});
+
 export const CreateTrainingLogSchema = z.object({
-  horseId: z.string().uuid(),
+  horseId: EntityIdSchema,
   date: LocalDateSchema,
   type: TrainingLogTypeSchema,
   notes: z.string().max(2000).optional().nullable(),

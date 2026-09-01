@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { ResourceKind, Role } from "@stablemanager/shared";
+import type { Role } from "@stablemanager/shared";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
-import type { Invite, Member, Resource, Tenant } from "@/types/api";
+import type { Invite, Member, Resource, Tenant, TrainingType } from "@/types/api";
 
 const { t } = useI18n();
 
@@ -12,6 +12,7 @@ const tenant = ref<Tenant | null>(null);
 const members = ref<Member[]>([]);
 const invites = ref<Invite[]>([]);
 const resources = ref<Resource[]>([]);
+const trainingTypes = ref<TrainingType[]>([]);
 const loading = ref(true);
 const error = ref("");
 const saving = ref(false);
@@ -23,21 +24,20 @@ const inviteForm = ref({
   role: "boarder" as Role,
   name: "",
 });
-const resourceForm = ref({
-  name: "",
-  kind: "oval_track" as ResourceKind,
-});
+const resourceForm = ref({ name: "" });
 const showResourceForm = ref(false);
+const trainingTypeName = ref("");
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [tRes, mRes, iRes, rRes] = await Promise.all([
+    const [tRes, mRes, iRes, rRes, trainingRes] = await Promise.all([
       api<{ tenant: Tenant }>("/api/tenants/current"),
       api<{ members: Member[] }>("/api/tenants/members"),
       api<{ invites: Invite[] }>("/api/tenants/invites"),
       api<{ resources: Resource[] }>("/api/tenants/resources"),
+      api<{ trainingTypes: TrainingType[] }>("/api/tenants/training-types"),
     ]);
     tenant.value = tRes.tenant;
     tenantForm.value = {
@@ -48,6 +48,7 @@ async function load() {
     members.value = mRes.members;
     invites.value = iRes.invites;
     resources.value = rRes.resources;
+    trainingTypes.value = trainingRes.trainingTypes;
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
   } finally {
@@ -109,7 +110,7 @@ async function createResource() {
       method: "POST",
       body: JSON.stringify(resourceForm.value),
     });
-    resourceForm.value = { name: "", kind: "oval_track" };
+    resourceForm.value = { name: "" };
     showResourceForm.value = false;
     await load();
   } catch (e) {
@@ -123,6 +124,33 @@ async function deleteResource(id: string) {
   if (!confirm(t("common.confirmDelete"))) return;
   try {
     await api(`/api/tenants/resources/${id}`, { method: "DELETE" });
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  }
+}
+
+async function createTrainingType() {
+  saving.value = true;
+  error.value = "";
+  try {
+    await api("/api/tenants/training-types", {
+      method: "POST",
+      body: JSON.stringify({ name: trainingTypeName.value }),
+    });
+    trainingTypeName.value = "";
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function deleteTrainingType(id: string) {
+  if (!confirm(t("common.confirmDelete"))) return;
+  try {
+    await api(`/api/tenants/training-types/${id}`, { method: "DELETE" });
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -180,6 +208,21 @@ onMounted(load);
             {{ t(`roles.${m.role}`) }}
           </span>
         </li>
+      </ul>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="font-medium text-stone-800">{{ t("settings.trainingTypes") }}</h2>
+      <form class="flex gap-2" @submit.prevent="createTrainingType">
+        <input v-model="trainingTypeName" required class="field flex-1" :placeholder="t('settings.trainingTypeName')" />
+        <button type="submit" class="btn-primary" :disabled="saving">{{ t("common.create") }}</button>
+      </form>
+      <ul class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white">
+        <li v-for="trainingType in trainingTypes" :key="trainingType.id" class="flex items-center justify-between gap-3 px-4 py-3">
+          <span class="font-medium">{{ trainingType.name }}</span>
+          <button type="button" class="text-sm text-red-600" @click="deleteTrainingType(trainingType.id)">{{ t("common.delete") }}</button>
+        </li>
+        <li v-if="!trainingTypes.length" class="px-4 py-3 text-sm text-stone-500">{{ t("common.empty") }}</li>
       </ul>
     </section>
 
@@ -261,16 +304,6 @@ onMounted(load);
           {{ t("settings.resourceName") }}
           <input v-model="resourceForm.name" required class="field mt-1" />
         </label>
-        <label class="block text-sm font-medium">
-          {{ t("settings.resourceKind") }}
-          <select v-model="resourceForm.kind" class="field mt-1">
-            <option value="oval_track">{{ t("resourceKind.oval_track") }}</option>
-            <option value="indoor_arena">
-              {{ t("resourceKind.indoor_arena") }}
-            </option>
-            <option value="other">{{ t("resourceKind.other") }}</option>
-          </select>
-        </label>
         <div class="flex gap-2">
           <button
             type="button"
@@ -295,9 +328,6 @@ onMounted(load);
         >
           <div>
             <p class="font-medium">{{ r.name }}</p>
-            <p class="text-xs text-stone-500">
-              {{ t(`resourceKind.${r.kind}`) }}
-            </p>
           </div>
           <button
             type="button"

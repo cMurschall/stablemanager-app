@@ -6,7 +6,7 @@ import {
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { horses, trainingLogs, users } from "../db/schema";
+import { horses, trainingLogs, trainingTypes, users } from "../db/schema";
 import { id } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { isBoarderOnly, requireRoles } from "../lib/rbac";
@@ -25,6 +25,18 @@ export const trainingRoutes = new Hono<{
   Bindings: Env;
   Variables: AppVariables;
 }>();
+
+async function hasTrainingType(
+  db: ReturnType<typeof createDb>,
+  tenantId: string,
+  type: string,
+) {
+  return !!(await db
+    .select({ id: trainingTypes.id })
+    .from(trainingTypes)
+    .where(and(eq(trainingTypes.tenantId, tenantId), eq(trainingTypes.name, type)))
+    .get());
+}
 
 trainingRoutes.use("*", authMiddleware);
 
@@ -118,6 +130,9 @@ trainingRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
   if (!horse) {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
+  if (!(await hasTrainingType(db, tenantId, body.data.type))) {
+    return c.json({ error: "Trainingsart nicht gefunden" }, 400);
+  }
 
   const row = {
     id: id(),
@@ -164,6 +179,13 @@ trainingRoutes.patch("/:id", requireRoles("hof_admin", "staff"), async (c) => {
 
   if (!existing) {
     return c.json({ error: "Eintrag nicht gefunden" }, 404);
+  }
+
+  if (
+    body.data.type !== undefined &&
+    !(await hasTrainingType(db, c.get("tenantId"), body.data.type))
+  ) {
+    return c.json({ error: "Trainingsart nicht gefunden" }, 400);
   }
 
   const patch = {

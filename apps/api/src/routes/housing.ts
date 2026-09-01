@@ -6,7 +6,7 @@ import {
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { accommodations } from "../db/schema";
+import { accommodations, horses } from "../db/schema";
 import { id } from "../lib/crypto";
 import { routeParam } from "../lib/params";
 import { requireRoles } from "../lib/rbac";
@@ -48,6 +48,9 @@ housingRoutes.post(
         400,
       );
     }
+    if (body.data.active === false && c.get("role") !== "hof_admin") {
+      return c.json({ error: "Nur der Hof-Admin kann Unterbringungen aktiv oder inaktiv anlegen" }, 403);
+    }
 
     const db = createDb(c.env);
     const row = {
@@ -56,6 +59,7 @@ housingRoutes.post(
       name: body.data.name,
       kind: body.data.kind,
       capacity: normalizeCapacity(body.data.kind, body.data.capacity),
+      active: body.data.active ?? true,
       notes: body.data.notes ?? null,
     };
     await db.insert(accommodations).values(row);
@@ -90,6 +94,20 @@ housingRoutes.patch(
 
     if (!existing) {
       return c.json({ error: "Unterbringung nicht gefunden" }, 404);
+    }
+
+    if (body.data.active !== undefined && c.get("role") !== "hof_admin") {
+      return c.json({ error: "Nur der Hof-Admin kann Unterbringungen aktivieren oder deaktivieren" }, 403);
+    }
+    if (body.data.active === false && existing.active) {
+      const occupied = await db
+        .select({ id: horses.id })
+        .from(horses)
+        .where(eq(horses.accommodationId, existing.id))
+        .get();
+      if (occupied) {
+        return c.json({ error: "Zuerst alle Pferde in eine andere Unterbringung umquartieren" }, 400);
+      }
     }
 
     const kind = body.data.kind ?? existing.kind;

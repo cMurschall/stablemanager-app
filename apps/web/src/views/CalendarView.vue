@@ -13,7 +13,7 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
-import type { Booking, Horse, Resource } from "@/types/api";
+import type { Booking, Member, Resource } from "@/types/api";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -21,7 +21,7 @@ const auth = useAuthStore();
 const weekStart = ref(startOfWeek());
 const bookings = ref<Booking[]>([]);
 const resources = ref<Resource[]>([]);
-const horses = ref<Horse[]>([]);
+const members = ref<Member[]>([]);
 const loading = ref(true);
 const error = ref("");
 const showForm = ref(false);
@@ -32,8 +32,8 @@ const form = ref({
   title: "",
   startsAt: "",
   endsAt: "",
-  horseId: "",
   notes: "",
+  participantUserIds: [] as string[],
 });
 
 const days = computed(() =>
@@ -45,11 +45,7 @@ const weekLabel = computed(() => {
   return `${formatDate(toIso(weekStart.value))} – ${formatDate(toIso(end))}`;
 });
 
-const trackResources = computed(() =>
-  resources.value.filter(
-    (r) => r.kind === "oval_track" || r.kind === "indoor_arena",
-  ),
-);
+const trackResources = computed(() => resources.value);
 
 function bookingsForDay(day: Date): Booking[] {
   const key = dayKey(day);
@@ -57,12 +53,14 @@ function bookingsForDay(day: Date): Booking[] {
 }
 
 async function loadMeta() {
-  const [r, h] = await Promise.all([
-    api<{ resources: Resource[] }>("/api/tenants/resources"),
-    api<{ horses: Horse[] }>("/api/horses"),
-  ]);
+  const r = await api<{ resources: Resource[] }>("/api/tenants/resources");
   resources.value = r.resources;
-  horses.value = h.horses;
+  if (auth.canWrite) {
+    const result = await api<{ members: Member[] }>("/api/tenants/members");
+    members.value = result.members.filter(
+      (member) => member.role === "boarder" || member.role === "staff",
+    );
+  }
 }
 
 async function loadBookings() {
@@ -74,10 +72,7 @@ async function loadBookings() {
     const data = await api<{ bookings: Booking[] }>(
       `/api/bookings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     );
-    bookings.value = data.bookings.filter(
-      (b) =>
-        b.resourceKind === "oval_track" || b.resourceKind === "indoor_arena",
-    );
+    bookings.value = data.bookings;
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
   } finally {
@@ -100,11 +95,11 @@ function openCreate(day?: Date) {
   end.setHours(11, 0, 0, 0);
   form.value = {
     resourceId: trackResources.value[0]?.id ?? "",
-    title: "",
+    title: "Reitunterricht",
     startsAt: toLocalInputValue(start.toISOString()),
     endsAt: toLocalInputValue(end.toISOString()),
-    horseId: "",
     notes: "",
+    participantUserIds: [],
   };
   showForm.value = true;
 }
@@ -120,8 +115,8 @@ async function createBooking() {
         title: form.value.title,
         startsAt: fromLocalInputValue(form.value.startsAt),
         endsAt: fromLocalInputValue(form.value.endsAt),
-        horseId: form.value.horseId || null,
         notes: form.value.notes.trim() || null,
+        participantUserIds: form.value.participantUserIds,
       }),
     });
     showForm.value = false;
@@ -222,7 +217,7 @@ onMounted(async () => {
               <p class="text-xs text-stone-500">
                 {{ formatTime(b.startsAt) }}–{{ formatTime(b.endsAt) }}
                 · {{ b.resourceName }}
-                <span v-if="b.horseName"> · {{ b.horseName }}</span>
+                <span v-if="b.participantNames.length"> · {{ b.participantNames.join(", ") }}</span>
               </p>
             </div>
             <button
@@ -265,14 +260,11 @@ onMounted(async () => {
                 :key="r.id"
                 :value="r.id"
               >
-                {{ r.name }} ({{ t(`resourceKind.${r.kind}`) }})
+                {{ r.name }}
               </option>
             </select>
           </label>
-          <label class="text-sm font-medium">
-            {{ t("calendar.bookingTitle") }}
-            <input v-model="form.title" required class="field" />
-          </label>
+          <p class="text-sm font-medium text-stone-700">Reitunterricht</p>
           <label class="text-sm font-medium">
             {{ t("calendar.startsAt") }}
             <input v-model="form.startsAt" type="datetime-local" required class="field" />
@@ -281,13 +273,22 @@ onMounted(async () => {
             {{ t("calendar.endsAt") }}
             <input v-model="form.endsAt" type="datetime-local" required class="field" />
           </label>
-          <label class="text-sm font-medium">
-            {{ t("calendar.horse") }}
-            <select v-model="form.horseId" class="field">
-              <option value="">—</option>
-              <option v-for="h in horses" :key="h.id" :value="h.id">{{ h.name }}</option>
-            </select>
-          </label>
+          <fieldset class="text-sm font-medium">
+            <legend>{{ t("calendar.participants") }}</legend>
+            <p class="mt-1 text-xs font-normal text-stone-500">
+              {{ t("calendar.participantsHint") }}
+            </p>
+            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-stone-200 p-3">
+              <label v-for="member in members" :key="member.userId" class="flex items-center gap-2 font-normal">
+                <input v-model="form.participantUserIds" type="checkbox" :value="member.userId" />
+                {{ member.name }}
+                <span class="text-xs text-stone-500">({{ t(`roles.${member.role}`) }})</span>
+              </label>
+              <p v-if="!members.length" class="text-sm font-normal text-stone-500">
+                {{ t("common.empty") }}
+              </p>
+            </div>
+          </fieldset>
           <label class="text-sm font-medium">
             {{ t("calendar.notes") }}
             <textarea v-model="form.notes" rows="2" class="field" />

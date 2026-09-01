@@ -7,7 +7,7 @@ import {
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
-import { horseOwners, horses } from "../db/schema";
+import { accommodations, horseOwners, horses } from "../db/schema";
 import {
   listAccommodationHistory,
   recordAccommodationChange,
@@ -130,6 +130,10 @@ horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
   if (!(await ownersAreTenantMembers(db, row.tenantId, ownerUserIds))) {
     return c.json({ error: "Besitzer muss Mitglied dieses Hofs sein" }, 400);
   }
+  if (row.accommodationId) {
+    const accommodation = await db.select({ active: accommodations.active }).from(accommodations).where(and(eq(accommodations.id, row.accommodationId), eq(accommodations.tenantId, row.tenantId))).get();
+    if (!accommodation?.active) return c.json({ error: "Unterbringung ist nicht aktiv" }, 400);
+  }
 
   try {
     await db.insert(horses).values(row);
@@ -185,6 +189,10 @@ horseRoutes.patch("/:id", async (c) => {
     : [...new Set(body.data.ownerUserIds)];
   if (ownerUserIds && !(await ownersAreTenantMembers(db, existing.tenantId, ownerUserIds))) {
     return c.json({ error: "Besitzer muss Mitglied dieses Hofs sein" }, 400);
+  }
+  if (body.data.accommodationId && body.data.accommodationId !== existing.accommodationId) {
+    const accommodation = await db.select({ active: accommodations.active }).from(accommodations).where(and(eq(accommodations.id, body.data.accommodationId), eq(accommodations.tenantId, existing.tenantId))).get();
+    if (!accommodation?.active) return c.json({ error: "Unterbringung ist nicht aktiv" }, 400);
   }
   const { ownerUserIds: _ownerUserIds, ...horsePatch } = body.data;
   try {

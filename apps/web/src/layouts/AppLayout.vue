@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRouter } from "vue-router";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Role } from "@stablemanager/shared";
 import { useAuthStore } from "@/stores/auth";
@@ -20,6 +20,20 @@ const unread = ref(0);
 const menuOpen = ref(false);
 const devUsers = ref<DevUser[]>([]);
 const switching = ref(false);
+
+const roleOrder: Record<Role, number> = {
+  hof_admin: 0,
+  staff: 1,
+  boarder: 2,
+};
+
+const sortedDevUsers = computed(() =>
+  [...devUsers.value].sort(
+    (a, b) =>
+      roleOrder[a.role] - roleOrder[b.role] ||
+      a.name.localeCompare(b.name, "de"),
+  ),
+);
 
 onMounted(async () => {
   try {
@@ -68,14 +82,18 @@ async function loginAs(email: string) {
 
 const links = [
   { to: "/horses", label: "nav.horses" },
-  { to: "/housing", label: "nav.housing" },
+  { to: "/housing", label: "nav.housing", internal: true },
   { to: "/calendar", label: "nav.calendar" },
   { to: "/board", label: "nav.board" },
-  { to: "/farrier", label: "nav.farrier" },
-  { to: "/services", label: "nav.services" },
-  { to: "/training", label: "nav.training" },
+  { to: "/farrier", label: "nav.farrier", internal: true },
+  { to: "/services", label: "nav.services", internal: true },
+  { to: "/training", label: "nav.training", internal: true },
   { to: "/reminders", label: "nav.reminders" },
 ];
+
+const visibleLinks = computed(() =>
+  links.filter((link) => !link.internal || auth.currentRole !== "boarder"),
+);
 </script>
 
 <template>
@@ -112,7 +130,7 @@ const links = [
             @change="loginAs(($event.target as HTMLSelectElement).value)"
           >
             <option disabled value="">Login as…</option>
-            <option v-for="u in devUsers" :key="u.id" :value="u.email">
+            <option v-for="u in sortedDevUsers" :key="u.id" :value="u.email">
               {{ u.name }} ({{ u.role }})
             </option>
           </select>
@@ -154,7 +172,7 @@ const links = [
 
       <nav class="mx-auto hidden max-w-6xl gap-1 overflow-x-auto px-4 pb-2 md:flex">
         <RouterLink
-          v-for="link in links"
+          v-for="link in visibleLinks"
           :key="link.to"
           :to="link.to"
           class="rounded-lg px-3 py-1.5 text-sm text-stone-600 hover:bg-brand-50 hover:text-brand-700"
@@ -177,7 +195,7 @@ const links = [
         class="flex flex-col gap-1 border-t border-stone-100 px-4 py-2 md:hidden"
       >
         <RouterLink
-          v-for="link in links"
+          v-for="link in visibleLinks"
           :key="link.to"
           :to="link.to"
           class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-brand-50"

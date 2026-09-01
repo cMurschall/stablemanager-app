@@ -143,6 +143,22 @@ async function deleteAccommodation(id: string) {
   }
 }
 
+async function setActive(row: Accommodation, active: boolean) {
+  saving.value = true;
+  error.value = "";
+  try {
+    await api(`/api/housing/accommodations/${row.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active }),
+    });
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
 function capacityLabel(row: Accommodation) {
   if (row.kind === "box") return "1";
   return row.capacity != null ? String(row.capacity) : "—";
@@ -225,7 +241,13 @@ onMounted(load);
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="font-medium">{{ row.name }}</p>
+              <p class="font-medium">
+                {{ row.name }}
+                <span
+                  class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                  :class="row.active ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'"
+                >{{ row.active ? t("housing.active") : t("housing.inactive") }}</span>
+              </p>
               <p class="text-xs text-stone-500">
                 {{ t(`accommodationKind.${row.kind}`) }}
                 · {{ t("housing.occupied") }}:
@@ -234,6 +256,7 @@ onMounted(load);
                 {{ capacityLabel(row) }}
               </p>
               <p v-if="row.notes" class="text-xs text-stone-500">{{ row.notes }}</p>
+              <p v-if="!row.active" class="text-xs text-stone-500">{{ t("housing.inactiveHint") }}</p>
               <p class="mt-2 text-xs font-medium text-stone-600">
                 {{ t("housing.currentHerd") }}
               </p>
@@ -258,6 +281,15 @@ onMounted(load);
                 @click="openEdit(row)"
               >
                 {{ t("common.edit") }}
+              </button>
+              <button
+                v-if="auth.isAdmin"
+                type="button"
+                class="text-sm text-brand-700"
+                :disabled="saving"
+                @click="setActive(row, !row.active)"
+              >
+                {{ row.active ? t("housing.deactivate") : t("housing.activate") }}
               </button>
               <button
                 v-if="auth.canWrite"

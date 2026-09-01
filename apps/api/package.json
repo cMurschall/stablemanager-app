@@ -9,9 +9,8 @@
     "deploy": "wrangler deploy",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply stablemanager --local --persist-to .wrangler/state",
+    "seed:local": "wrangler d1 execute stablemanager --local --persist-to .wrangler/state --file ../../seed-horses.sql",
     "db:migrate:remote": "wrangler d1 migrations apply stablemanager --remote",
-    "seed": "node --experimental-strip-types scripts/seed-local.mts",
-    "seed:reset": "node --experimental-strip-types scripts/seed-local.mts --reset",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

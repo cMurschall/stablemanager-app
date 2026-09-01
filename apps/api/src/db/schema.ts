@@ -127,6 +127,7 @@ export const accommodations = sqliteTable(
       enum: ["box", "paddock_box", "paddock", "pasture"],
     }).notNull(),
     capacity: integer("capacity"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     notes: text("notes"),
     createdAt: text("created_at")
       .notNull()
@@ -267,6 +268,22 @@ export const bookings = sqliteTable(
   (t) => [
     index("bookings_tenant_time_idx").on(t.tenantId, t.startsAt, t.endsAt),
     index("bookings_resource_idx").on(t.resourceId, t.startsAt),
+  ],
+);
+
+export const bookingParticipants = sqliteTable(
+  "booking_participants",
+  {
+    bookingId: text("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    uniqueIndex("booking_participants_booking_user_uidx").on(t.bookingId, t.userId),
+    index("booking_participants_user_idx").on(t.userId),
   ],
 );
 
@@ -493,9 +510,7 @@ export const trainingLogs = sqliteTable(
       .notNull()
       .references(() => horses.id, { onDelete: "cascade" }),
     date: text("date").notNull(),
-    type: text("type", {
-      enum: ["longe", "ridden", "trail", "rental"],
-    }).notNull(),
+    type: text("type").notNull(),
     notes: text("notes"),
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
@@ -507,5 +522,23 @@ export const trainingLogs = sqliteTable(
   (t) => [
     index("training_logs_tenant_date_idx").on(t.tenantId, t.date),
     index("training_logs_horse_date_idx").on(t.horseId, t.date),
+  ],
+);
+
+export const trainingTypes = sqliteTable(
+  "training_types",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    uniqueIndex("training_types_tenant_name_uidx").on(t.tenantId, t.name),
+    index("training_types_tenant_idx").on(t.tenantId),
   ],
 );

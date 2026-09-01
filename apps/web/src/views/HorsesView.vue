@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { HorseSex } from "@stablemanager/shared";
@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { parseFeifId } from "@/lib/feif";
 import { useAuthStore } from "@/stores/auth";
 import type { Accommodation, Horse, Member } from "@/types/api";
+import FarrierView from "@/views/FarrierView.vue";
+import ServiceOrdersView from "@/views/ServiceOrdersView.vue";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -18,6 +20,9 @@ const loading = ref(true);
 const error = ref("");
 const showForm = ref(false);
 const saving = ref(false);
+const movingHorseId = ref<string | null>(null);
+const search = ref("");
+const filterAccommodationId = ref("");
 
 const form = ref({
   name: "",
@@ -27,6 +32,16 @@ const form = ref({
   ownerUserIds: [] as string[],
   accommodationId: "",
   notes: "",
+});
+
+const filteredHorses = computed(() => {
+  const term = search.value.trim().toLocaleLowerCase("de");
+  return horses.value.filter(
+    (horse) =>
+      (!term || horse.name.toLocaleLowerCase("de").includes(term)) &&
+      (!filterAccommodationId.value ||
+        horse.accommodationId === filterAccommodationId.value),
+  );
 });
 
 async function load() {
@@ -112,13 +127,33 @@ function accommodationLabel(id: string | null) {
   return `${row.name} (${t(`accommodationKind.${row.kind}`)})`;
 }
 
+async function changeAccommodation(horse: Horse, accommodationId: string) {
+  if (accommodationId === (horse.accommodationId ?? "")) return;
+  movingHorseId.value = horse.id;
+  error.value = "";
+  try {
+    const result = await api<{ horse: Horse }>(`/api/horses/${horse.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ accommodationId: accommodationId || null }),
+    });
+    const index = horses.value.findIndex((item) => item.id === horse.id);
+    if (index >= 0) horses.value[index] = result.horse;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    movingHorseId.value = null;
+  }
+}
+
 onMounted(load);
 </script>
 
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-3">
-      <h1 class="text-xl font-semibold text-brand-800">{{ t("horses.title") }}</h1>
+      <h1 class="text-xl font-semibold text-brand-800">
+        {{ auth.currentRole === "boarder" ? t("horses.myHorses") : t("horses.title") }}
+      </h1>
       <button
         v-if="auth.canWrite"
         type="button"
@@ -129,17 +164,45 @@ onMounted(load);
       </button>
     </div>
 
+    <div v-if="auth.currentRole !== 'boarder'" class="grid gap-3 sm:grid-cols-2">
+      <label class="text-sm font-medium text-stone-700">
+        {{ t("horses.filterName") }}
+        <input
+          v-model="search"
+          class="field mt-1"
+          :placeholder="t('horses.filterNamePlaceholder')"
+        />
+      </label>
+      <label class="text-sm font-medium text-stone-700">
+        {{ t("horses.filterAccommodation") }}
+        <select v-model="filterAccommodationId" class="field mt-1">
+          <option value="">{{ t("horses.allAccommodations") }}</option>
+          <option
+            v-for="accommodation in accommodations"
+            :key="accommodation.id"
+            :value="accommodation.id"
+          >
+            {{ accommodationLabel(accommodation.id) }}
+          </option>
+        </select>
+      </label>
+    </div>
+
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-else-if="error" class="text-sm text-red-600">{{ error }}</p>
 
     <ul
-      v-else-if="horses.length"
+      v-else-if="filteredHorses.length"
       class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
     >
-      <li v-for="horse in horses" :key="horse.id">
+      <li
+        v-for="horse in filteredHorses"
+        :key="horse.id"
+        class="flex items-center gap-3 px-4 py-3"
+      >
         <RouterLink
           :to="`/horses/${horse.id}`"
-          class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-brand-50/60"
+          class="flex min-w-0 flex-1 items-center justify-between gap-3 hover:bg-brand-50/60"
         >
           <div>
             <p class="font-medium text-stone-900">{{ horse.name }}</p>
@@ -151,9 +214,35 @@ onMounted(load);
           </div>
           <span class="text-stone-400">›</span>
         </RouterLink>
+        <label v-if="auth.canWrite" class="w-44 shrink-0 text-xs text-stone-500">
+          {{ t("horses.accommodation") }}
+          <select
+            class="field mt-1 py-1 text-sm"
+            :value="horse.accommodationId ?? ''"
+            :disabled="movingHorseId === horse.id"
+            @change="changeAccommodation(horse, ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">—</option>
+            <option
+              v-for="accommodation in accommodations.filter((item) => item.active || item.id === horse.accommodationId)"
+              :key="accommodation.id"
+              :value="accommodation.id"
+            >
+              {{ accommodationLabel(accommodation.id) }}
+            </option>
+          </select>
+        </label>
       </li>
     </ul>
+    <p v-else-if="horses.length" class="text-sm text-stone-500">
+      {{ t("horses.noFilterResults") }}
+    </p>
     <p v-else class="text-sm text-stone-500">{{ t("horses.none") }}</p>
+
+    <template v-if="auth.currentRole === 'boarder'">
+      <FarrierView />
+      <ServiceOrdersView />
+    </template>
 
     <div
       v-if="showForm"
@@ -215,7 +304,7 @@ onMounted(load);
             {{ t("horses.accommodation") }}
             <select v-model="form.accommodationId" class="field">
               <option value="">—</option>
-              <option v-for="s in accommodations" :key="s.id" :value="s.id">
+            <option v-for="s in accommodations.filter((row) => row.active)" :key="s.id" :value="s.id">
                 {{ s.name }} ({{ t(`accommodationKind.${s.kind}`) }})
               </option>
             </select>

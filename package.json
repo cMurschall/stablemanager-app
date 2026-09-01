@@ -11,8 +11,7 @@
     "deploy": "pnpm build && pnpm --filter @stablemanager/api deploy",
     "db:generate": "pnpm --filter @stablemanager/api db:generate",
     "db:migrate:local": "pnpm --filter @stablemanager/api db:migrate:local",
-    "db:seed": "pnpm --filter @stablemanager/api seed",
-    "db:seed:reset": "pnpm --filter @stablemanager/api seed:reset",
+    "db:seed:local": "pnpm --filter @stablemanager/api seed:local",
     "typecheck": "pnpm -r typecheck"
   },
   "engines": {

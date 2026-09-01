@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import type { TrainingLogType } from "@stablemanager/shared";
 import { api } from "@/lib/api";
 import {
   addMonths,
@@ -14,14 +13,13 @@ import {
   startOfMonth,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
-import type { Horse, TrainingLog } from "@/types/api";
+import HorseSelect from "@/components/HorseSelect.vue";
+import type { Horse, TrainingLog, TrainingType } from "@/types/api";
 
 const { t } = useI18n();
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
-
-const TYPES: TrainingLogType[] = ["longe", "ridden", "trail", "rental"];
 
 const viewMode = ref<"day" | "month">("day");
 const selectedDate = ref(dayKey(new Date()));
@@ -29,6 +27,7 @@ const selectedMonth = ref(monthKey(new Date()));
 const filterHorseId = ref("");
 const logs = ref<TrainingLog[]>([]);
 const horses = ref<Horse[]>([]);
+const trainingTypes = ref<TrainingType[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
@@ -38,7 +37,7 @@ const editingId = ref<string | null>(null);
 const form = ref({
   horseId: "",
   date: dayKey(new Date()),
-  type: "ridden" as TrainingLogType,
+  type: "",
   notes: "",
 });
 
@@ -112,6 +111,11 @@ async function load() {
     const horsePromise = api<{ horses: Horse[] }>("/api/horses").then((r) => {
       horses.value = r.horses;
     });
+    const trainingTypePromise = api<{ trainingTypes: TrainingType[] }>(
+      "/api/tenants/training-types",
+    ).then((r) => {
+      trainingTypes.value = r.trainingTypes;
+    });
 
     let url: string;
     if (viewMode.value === "day") {
@@ -127,6 +131,7 @@ async function load() {
     const [logsRes] = await Promise.all([
       api<{ trainingLogs: TrainingLog[] }>(url),
       horsePromise,
+      trainingTypePromise,
     ]);
     logs.value = logsRes.trainingLogs;
   } catch (e) {
@@ -174,7 +179,7 @@ function openCreate() {
   form.value = {
     horseId: filterHorseId.value || horses.value[0]?.id || "",
     date: viewMode.value === "day" ? selectedDate.value : dayKey(new Date()),
-    type: "ridden",
+    type: trainingTypes.value[0]?.name ?? "",
     notes: "",
   };
   showForm.value = true;
@@ -234,8 +239,8 @@ async function removeEntry(log: TrainingLog) {
   }
 }
 
-function typeLabel(type: TrainingLogType) {
-  return t(`training.type.${type}`);
+function typeLabel(type: string) {
+  return type;
 }
 
 onMounted(() => {
@@ -386,16 +391,13 @@ watch(
 
       <label class="block text-sm font-medium">
         {{ t("training.filterHorse") }}
-        <select
+        <HorseSelect
           v-model="filterHorseId"
-          class="field mt-1"
+          :horses="horses"
+          include-all
+          :all-label="t('training.allHorses')"
           @change="onMonthFilterChange"
-        >
-          <option value="">{{ t("training.allHorses") }}</option>
-          <option v-for="h in horses" :key="h.id" :value="h.id">
-            {{ h.name }}
-          </option>
-        </select>
+        />
       </label>
 
       <div class="space-y-4">
@@ -467,11 +469,7 @@ watch(
         <div class="mt-4 grid gap-3">
           <label v-if="!editingId" class="text-sm font-medium">
             {{ t("training.horse") }}
-            <select v-model="form.horseId" required class="field mt-1">
-              <option v-for="h in horses" :key="h.id" :value="h.id">
-                {{ h.name }}
-              </option>
-            </select>
+            <HorseSelect v-model="form.horseId" :horses="horses" required />
           </label>
           <label class="text-sm font-medium">
             {{ t("training.date") }}
@@ -480,8 +478,8 @@ watch(
           <label class="text-sm font-medium">
             {{ t("training.activity") }}
             <select v-model="form.type" required class="field mt-1">
-              <option v-for="ty in TYPES" :key="ty" :value="ty">
-                {{ typeLabel(ty) }}
+              <option v-for="trainingType in trainingTypes" :key="trainingType.id" :value="trainingType.name">
+                {{ trainingType.name }}
               </option>
             </select>
           </label>

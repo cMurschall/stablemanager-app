@@ -38,6 +38,7 @@ export type Accommodation = {
   name: string;
   kind: AccommodationKind;
   capacity: number | null;
+  active: boolean;
   notes: string | null;
   createdAt: string;
 };
@@ -57,13 +58,15 @@ export type Booking = {
   title: string;
   startsAt: string;
   endsAt: string;
-  horseId: string | null;
   notes: string | null;
   createdBy: string | null;
   createdAt: string;
   horseName: string | null;
   resourceName: string;
   resourceKind: ResourceKind;
+  participantUserIds: string[];
+  participantNames: string[];
+  isParticipant: boolean;
 };
 
 export type BulletinPost = {
@@ -207,4 +210,11 @@ export type TrainingLog = {
   createdAt: string;
   horseName: string;
   createdByName: string | null;
+};
+
+export type TrainingType = {
+  id: string;
+  tenantId: string;
+  name: string;
+  createdAt: string;
 };

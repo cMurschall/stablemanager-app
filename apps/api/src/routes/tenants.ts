@@ -1,8 +1,9 @@
 import { Hono } from "hono";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   CreateInviteSchema,
   CreateResourceSchema,
+  CreateTrainingTypeSchema,
   UpdateResourceSchema,
   UpdateTenantSchema,
 } from "@stablemanager/shared";
@@ -13,6 +14,7 @@ import {
   memberships,
   resources,
   tenants,
+  trainingTypes,
   users,
 } from "../db/schema";
 import { addDays, id, randomToken, sha256Hex } from "../lib/crypto";
@@ -41,6 +43,42 @@ tenantRoutes.get("/current", async (c) => {
   }
 
   return c.json({ tenant, role: c.get("role") });
+});
+
+tenantRoutes.get("/training-types", async (c) => {
+  const db = createDb(c.env);
+  const rows = await db
+    .select()
+    .from(trainingTypes)
+    .where(eq(trainingTypes.tenantId, c.get("tenantId")))
+    .orderBy(asc(trainingTypes.name))
+    .all();
+  return c.json({ trainingTypes: rows });
+});
+
+tenantRoutes.post("/training-types", requireRoles("hof_admin"), async (c) => {
+  const body = CreateTrainingTypeSchema.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: "UngÃ¼ltige Anfrage" }, 400);
+  const row = { id: id(), tenantId: c.get("tenantId"), name: body.data.name };
+  try {
+    await createDb(c.env).insert(trainingTypes).values(row);
+  } catch {
+    return c.json({ error: "Diese Trainingsart gibt es bereits" }, 409);
+  }
+  return c.json({ trainingType: row }, 201);
+});
+
+tenantRoutes.delete("/training-types/:id", requireRoles("hof_admin"), async (c) => {
+  const db = createDb(c.env);
+  const typeId = routeParam(c, "id");
+  const existing = await db
+    .select({ id: trainingTypes.id })
+    .from(trainingTypes)
+    .where(and(eq(trainingTypes.id, typeId), eq(trainingTypes.tenantId, c.get("tenantId"))))
+    .get();
+  if (!existing) return c.json({ error: "Trainingsart nicht gefunden" }, 404);
+  await db.delete(trainingTypes).where(eq(trainingTypes.id, existing.id));
+  return c.json({ ok: true });
 });
 
 tenantRoutes.patch("/current", requireRoles("hof_admin"), async (c) => {

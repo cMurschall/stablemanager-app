@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import {
   AcceptInviteSchema,
   MagicLinkRequestSchema,
@@ -26,7 +26,6 @@ import {
 } from "../lib/crypto";
 import { sendMagicLinkEmail } from "../lib/email";
 import { routeParam } from "../lib/params";
-import { DEMO_ADMIN, DEMO_USERS } from "../lib/demoUsers";
 import { SESSION_COOKIE, authMiddleware } from "../middleware/auth";
 
 const SESSION_DAYS = 30;
@@ -37,10 +36,7 @@ export const authRoutes = new Hono<{
 }>();
 
 async function createSessionCookie(
-  c: {
-    env: Env;
-    header: (name: string) => string | undefined;
-  },
+  c: { env: Env },
   userId: string,
   tenantId: string,
 ) {
@@ -61,61 +57,8 @@ function isDev(env: Env) {
   return env.ENVIRONMENT !== "production";
 }
 
-async function ensureDemoUsers(env: Env) {
+async function listDevUsers(env: Env) {
   const db = createDb(env);
-  const tenant = await db.select().from(tenants).limit(1).get();
-  if (!tenant) return [] as Array<{
-    id: string;
-    email: string;
-    name: string;
-    role: "hof_admin" | "staff" | "boarder";
-    tenantId: string;
-    tenantName: string;
-  }>;
-
-  for (const demo of DEMO_USERS) {
-    let user = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, demo.email))
-      .get();
-
-    if (!user) {
-      const userId = id();
-      await db.insert(users).values({
-        id: userId,
-        email: demo.email,
-        name: demo.name,
-      });
-      user = {
-        id: userId,
-        email: demo.email,
-        name: demo.name,
-        createdAt: nowIso(),
-      };
-    }
-
-    const membership = await db
-      .select()
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.userId, user.id),
-          eq(memberships.tenantId, tenant.id),
-        ),
-      )
-      .get();
-
-    if (!membership) {
-      await db.insert(memberships).values({
-        id: id(),
-        userId: user.id,
-        tenantId: tenant.id,
-        role: demo.role,
-      });
-    }
-  }
-
   return db
     .select({
       id: users.id,
@@ -128,6 +71,7 @@ async function ensureDemoUsers(env: Env) {
     .from(memberships)
     .innerJoin(users, eq(memberships.userId, users.id))
     .innerJoin(tenants, eq(memberships.tenantId, tenants.id))
+    .orderBy(asc(tenants.name), asc(users.name))
     .all();
 }
 
@@ -137,7 +81,7 @@ authRoutes.get("/dev-users", async (c) => {
     return c.json({ error: "Nicht verfügbar" }, 404);
   }
 
-  const list = await ensureDemoUsers(c.env);
+  const list = await listDevUsers(c.env);
   return c.json({ users: list, environment: c.env.ENVIRONMENT });
 });
 
@@ -150,11 +94,13 @@ authRoutes.post("/dev-login", async (c) => {
   const body = MagicLinkRequestSchema.safeParse(
     (await c.req.json().catch(() => ({}))) ?? {},
   );
+  const devUsers = await listDevUsers(c.env);
   const email = body.success
     ? body.data.email
-    : DEMO_ADMIN.email;
-
-  await ensureDemoUsers(c.env);
+    : devUsers.find((user) => user.role === "hof_admin")?.email;
+  if (!email) {
+    return c.json({ error: "Kein Hof-Admin vorhanden. Zuerst einen Hof anlegen." }, 404);
+  }
 
   const db = createDb(c.env);
   const user = await db
