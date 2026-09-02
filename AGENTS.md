@@ -9,7 +9,7 @@ Stallverwaltung für Islandpferdehöfe. Multi-tenant PWA + Cloudflare Worker API
 | Web | Vue 3, Vite, Pinia, Vue Router, vue-i18n, Tailwind v4, PWA |
 | API | Cloudflare Workers, Hono, Drizzle ORM, D1 (SQLite) |
 | Shared | Zod in `packages/shared` |
-| Auth | Session-Cookie `sm_session`; Magic Link (+ Dev-Login) |
+| Auth | Session-Cookie `sm_session`; Passwort-Login; Willkommens-/Reset-Links (Admin kopiert, kein Mailversand); Dev-Login |
 
 Monorepo (pnpm): `apps/web`, `apps/api`, `packages/shared`.
 
@@ -87,7 +87,8 @@ Backend: `requireRoles`, `canWriteStaff`, `isBoarderOnly` in `apps/api/src/lib/r
 
 ### Auth / Tenancy
 - Multi-Tenant über `memberships`; Tenant-Wechsel möglich
-- Invites mit vorgegebener Rolle
+- Invites mit vorgegebener Rolle; Admin erhält kopierbaren Einladungslink (kein Mailversand nötig)
+- Willkommens- und „Passwort vergessen“-Links in der Hof-Verwaltung; Empfänger setzt Passwort unter `/set-password/:token`
 
 ## Wichtige Pfade
 
@@ -118,6 +119,7 @@ apps/web/src/layouts/AppLayout.vue # Nav
 - Kein Englisch in der UI
 - Care-Events und Hufschmied-Visits sind nicht verknüpft
 - Keine E-Mail bei Hufschmied-Terminen (nur In-App)
+- Kein transaktionaler Mailversand für Login: Willkommen/Reset/Einladung als kopierbare Links
 
 ## Konventionen für Agents
 

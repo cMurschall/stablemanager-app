@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: "/set-password/:token",
+    name: "set-password",
+    component: () => import("@/views/SetPasswordView.vue"),
+    meta: { public: true },
+  },
+  {
     path: "/",
     component: () => import("@/layouts/AppLayout.vue"),
     children: [

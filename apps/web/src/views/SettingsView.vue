@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { Resource, Tenant, TrainingType } from "@/types/api";
 
@@ -13,7 +13,10 @@ const trainingTypes = ref<TrainingType[]>([]);
 const loading = ref(true);
 const error = ref("");
 const saving = ref(false);
+const success = ref("");
 const deleteTarget = ref<{ kind: "resource" | "trainingType"; id: string } | null>(null);
+const restorePayload = ref<unknown>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 
 const tenantForm = ref({ name: "", timezone: "Europe/Berlin", maxDailyServiceTasks: 3 });
 const resourceForm = ref({ name: "" });
@@ -123,6 +126,77 @@ async function confirmDelete() {
   }
 }
 
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename="([^"]+)"/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+async function downloadBackup() {
+  saving.value = true;
+  error.value = "";
+  success.value = "";
+  try {
+    const res = await fetch("/api/tenants/backup", { credentials: "include" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, data);
+    }
+    const blob = await res.blob();
+    const filename =
+      filenameFromDisposition(res.headers.get("Content-Disposition")) ||
+      `hof-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function onBackupFile(event: Event) {
+  error.value = "";
+  success.value = "";
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    const text = await file.text();
+    restorePayload.value = JSON.parse(text) as unknown;
+  } catch {
+    error.value = t("common.error");
+    restorePayload.value = null;
+  }
+}
+
+async function confirmRestore() {
+  if (!restorePayload.value) return;
+  const payload = restorePayload.value;
+  restorePayload.value = null;
+  saving.value = true;
+  error.value = "";
+  success.value = "";
+  try {
+    await api("/api/tenants/restore", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    success.value = t("settings.backupRestoreOk");
+    await load();
+    window.location.reload();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -131,6 +205,7 @@ onMounted(load);
     <h1 class="text-xl font-semibold text-brand-800">{{ t("settings.title") }}</h1>
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <p v-if="success" class="text-sm text-emerald-700">{{ success }}</p>
 
     <section v-if="tenant" class="space-y-3">
       <h2 class="font-medium text-stone-800">{{ t("settings.tenant") }}</h2>
@@ -154,6 +229,37 @@ onMounted(load);
           {{ saving ? t("common.loading") : t("common.save") }}
         </button>
       </form>
+    </section>
+
+    <section class="groupbox">
+      <h2 class="font-medium text-stone-800">{{ t("settings.backup") }}</h2>
+      <p class="text-sm text-stone-500">{{ t("settings.backupHint") }}</p>
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="btn-primary"
+          :disabled="saving"
+          @click="downloadBackup"
+        >
+          {{ t("settings.backupDownload") }}
+        </button>
+        <button
+          type="button"
+          class="btn-danger"
+          :disabled="saving"
+          @click="fileInput?.click()"
+        >
+          {{ t("settings.backupRestore") }}
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          accept="application/json,.json"
+          class="hidden"
+          @change="onBackupFile"
+        />
+      </div>
+      <p class="text-xs text-stone-500">{{ t("settings.backupPickFile") }}</p>
     </section>
 
     <section class="groupbox">
@@ -238,6 +344,14 @@ onMounted(load);
       :confirm-label="t('common.delete')"
       @close="deleteTarget = null"
       @confirm="confirmDelete"
+    />
+    <ConfirmDialog
+      :open="restorePayload != null"
+      :title="t('settings.backupRestore')"
+      :message="t('settings.backupRestoreConfirm')"
+      :confirm-label="t('settings.backupRestore')"
+      @close="restorePayload = null"
+      @confirm="confirmRestore"
     />
   </div>
 </template>

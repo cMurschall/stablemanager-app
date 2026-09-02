@@ -151,6 +151,7 @@ export type Member = {
   email: string;
   name: string;
   role: Role;
+  hasPassword?: boolean;
   horseCount?: number;
 };
 

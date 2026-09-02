@@ -47,6 +47,28 @@ export const MagicLinkRequestSchema = z.object({
   email: z.string().email().toLowerCase().trim(),
 });
 
+export const PasswordSchema = z
+  .string()
+  .min(8, "Mindestens 8 Zeichen")
+  .max(200);
+
+export const PasswordLoginSchema = z.object({
+  email: z.string().email().toLowerCase().trim(),
+  password: z.string().min(1).max(200),
+});
+
+export const PasswordTokenPurposeSchema = z.enum(["welcome", "reset"]);
+export type PasswordTokenPurpose = z.infer<typeof PasswordTokenPurposeSchema>;
+
+export const SetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: PasswordSchema,
+});
+
+export const CreatePasswordLinkSchema = z.object({
+  purpose: PasswordTokenPurposeSchema,
+});
+
 export const SwitchTenantSchema = z.object({
   tenantId: EntityIdSchema,
 });
@@ -60,6 +82,7 @@ export const CreateInviteSchema = z.object({
 export const AcceptInviteSchema = z.object({
   token: z.string().min(1),
   name: z.string().trim().min(1).max(120),
+  password: PasswordSchema,
 });
 
 export const UpdateTenantSchema = z.object({
@@ -267,3 +290,54 @@ export const UpdateTrainingLogSchema = z.object({
   type: TrainingLogTypeSchema.optional(),
   notes: z.string().max(2000).optional().nullable(),
 });
+
+/** Serializable backup of one tenant (v1). Entity rows keep original IDs. */
+const BackupScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const BackupRowSchema = z.record(BackupScalarSchema);
+
+export const TenantBackupV1Schema = z.object({
+  version: z.literal(1),
+  format: z.literal("stablemanager-backup-v1"),
+  exportedAt: z.string().min(1),
+  tenant: z.object({
+    name: z.string().trim().min(1).max(120),
+    slug: z.string().optional(),
+    timezone: z.string().min(1),
+    maxDailyServiceTasks: z.number().int().min(1).max(12),
+  }),
+  users: z.array(
+    z.object({
+      id: EntityIdSchema,
+      email: z.string().email().toLowerCase(),
+      name: z.string().min(1),
+    }),
+  ),
+  members: z.array(
+    z.object({
+      userId: EntityIdSchema,
+      email: z.string().email().toLowerCase(),
+      name: z.string().min(1),
+      role: RoleSchema,
+    }),
+  ),
+  accommodations: z.array(BackupRowSchema),
+  horses: z.array(BackupRowSchema),
+  horseOwners: z.array(BackupRowSchema),
+  horseAccommodationHistory: z.array(BackupRowSchema),
+  resources: z.array(BackupRowSchema),
+  bookings: z.array(BackupRowSchema),
+  bookingParticipants: z.array(BackupRowSchema),
+  bulletinPosts: z.array(BackupRowSchema),
+  trainingTypes: z.array(BackupRowSchema),
+  trainingLogs: z.array(BackupRowSchema),
+  careEvents: z.array(BackupRowSchema),
+  notifications: z.array(BackupRowSchema),
+  farrierVisits: z.array(BackupRowSchema),
+  farrierSignups: z.array(BackupRowSchema),
+  serviceOrders: z.array(BackupRowSchema),
+  serviceOrderSelfDays: z.array(BackupRowSchema),
+  serviceTaskCompletions: z.array(BackupRowSchema),
+  invites: z.array(BackupRowSchema),
+});
+
+export type TenantBackupV1 = z.infer<typeof TenantBackupV1Schema>;

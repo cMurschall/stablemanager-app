@@ -1,9 +1,12 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import {
   AcceptInviteSchema,
   MagicLinkRequestSchema,
+  PasswordLoginSchema,
+  SetPasswordSchema,
   SwitchTenantSchema,
 } from "@stablemanager/shared";
 import type { AppVariables, Env } from "../env";
@@ -12,6 +15,7 @@ import {
   invites,
   loginTokens,
   memberships,
+  passwordTokens,
   sessions,
   tenants,
   users,
@@ -25,6 +29,7 @@ import {
   sha256Hex,
 } from "../lib/crypto";
 import { sendMagicLinkEmail } from "../lib/email";
+import { hashPassword, verifyPassword } from "../lib/password";
 import { routeParam } from "../lib/params";
 import { SESSION_COOKIE, authMiddleware } from "../middleware/auth";
 
@@ -35,8 +40,8 @@ export const authRoutes = new Hono<{
   Variables: AppVariables;
 }>();
 
-async function createSessionCookie(
-  c: { env: Env },
+async function issueSession(
+  c: Context<{ Bindings: Env; Variables: AppVariables }>,
   userId: string,
   tenantId: string,
 ) {
@@ -50,7 +55,13 @@ async function createSessionCookie(
     tokenHash: sessionHash,
     expiresAt: addDays(SESSION_DAYS),
   });
-  return sessionToken;
+  setCookie(c, SESSION_COOKIE, sessionToken, {
+    httpOnly: true,
+    secure: c.env.ENVIRONMENT === "production",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: SESSION_DAYS * 24 * 60 * 60,
+  });
 }
 
 function isDev(env: Env) {
@@ -130,18 +141,7 @@ authRoutes.post("/dev-login", async (c) => {
     return c.json({ error: "User hat keine Hof-Mitgliedschaft" }, 403);
   }
 
-  const sessionToken = await createSessionCookie(
-    c,
-    user.id,
-    membership.tenantId,
-  );
-  setCookie(c, SESSION_COOKIE, sessionToken, {
-    httpOnly: true,
-    secure: false,
-    sameSite: "Lax",
-    path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
-  });
+  await issueSession(c, user.id, membership.tenantId);
 
   return c.json({
     ok: true,
@@ -209,6 +209,149 @@ authRoutes.post("/magic-link", async (c) => {
   });
 });
 
+authRoutes.post("/login", async (c) => {
+  const body = PasswordLoginSchema.safeParse(await c.req.json());
+  if (!body.success) {
+    return c.json({ error: "Ungültige Anmeldung" }, 400);
+  }
+
+  const db = createDb(c.env);
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, body.data.email))
+    .get();
+
+  if (!user) {
+    return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  }
+
+  if (!user.passwordHash) {
+    return c.json(
+      {
+        error:
+          "Noch kein Passwort gesetzt. Bitte den Hof-Admin um einen Willkommenslink.",
+      },
+      401,
+    );
+  }
+
+  const ok = await verifyPassword(body.data.password, user.passwordHash);
+  if (!ok) {
+    return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  }
+
+  const membership = await db
+    .select()
+    .from(memberships)
+    .where(eq(memberships.userId, user.id))
+    .limit(1)
+    .get();
+
+  if (!membership) {
+    return c.json({ error: "Kein Hof-Zugang" }, 403);
+  }
+
+  await issueSession(c, user.id, membership.tenantId);
+  return c.json({
+    ok: true,
+    user: { id: user.id, email: user.email, name: user.name },
+    tenantId: membership.tenantId,
+    role: membership.role,
+  });
+});
+
+authRoutes.get("/password/:token", async (c) => {
+  const token = routeParam(c, "token");
+  const db = createDb(c.env);
+  const tokenHash = await sha256Hex(token);
+  const now = nowIso();
+
+  const row = await db
+    .select({
+      purpose: passwordTokens.purpose,
+      expiresAt: passwordTokens.expiresAt,
+      usedAt: passwordTokens.usedAt,
+      email: users.email,
+      name: users.name,
+    })
+    .from(passwordTokens)
+    .innerJoin(users, eq(passwordTokens.userId, users.id))
+    .where(eq(passwordTokens.tokenHash, tokenHash))
+    .get();
+
+  if (!row || row.usedAt || row.expiresAt < now) {
+    return c.json({ error: "Link ungültig oder abgelaufen" }, 404);
+  }
+
+  return c.json({
+    email: row.email,
+    name: row.name,
+    purpose: row.purpose,
+  });
+});
+
+authRoutes.post("/password", async (c) => {
+  const body = SetPasswordSchema.safeParse(await c.req.json());
+  if (!body.success) {
+    return c.json({ error: "Passwort mindestens 8 Zeichen" }, 400);
+  }
+
+  const db = createDb(c.env);
+  const tokenHash = await sha256Hex(body.data.token);
+  const now = nowIso();
+
+  const row = await db
+    .select()
+    .from(passwordTokens)
+    .where(
+      and(
+        eq(passwordTokens.tokenHash, tokenHash),
+        gt(passwordTokens.expiresAt, now),
+        isNull(passwordTokens.usedAt),
+      ),
+    )
+    .get();
+
+  if (!row) {
+    return c.json({ error: "Link ungültig oder abgelaufen" }, 404);
+  }
+
+  const user = await db.select().from(users).where(eq(users.id, row.userId)).get();
+  if (!user) {
+    return c.json({ error: "Benutzer nicht gefunden" }, 404);
+  }
+
+  const membership = await db
+    .select()
+    .from(memberships)
+    .where(eq(memberships.userId, user.id))
+    .limit(1)
+    .get();
+
+  if (!membership) {
+    return c.json({ error: "Kein Hof-Zugang" }, 403);
+  }
+
+  const passwordHash = await hashPassword(body.data.password);
+  await db
+    .update(users)
+    .set({ passwordHash })
+    .where(eq(users.id, user.id));
+
+  await db
+    .update(passwordTokens)
+    .set({ usedAt: now })
+    .where(eq(passwordTokens.userId, user.id));
+
+  if (row.purpose === "reset") {
+    await db.delete(sessions).where(eq(sessions.userId, user.id));
+  }
+
+  await issueSession(c, user.id, membership.tenantId);
+  return c.json({ ok: true });
+});
+
 authRoutes.get("/callback", async (c) => {
   const token = c.req.query("token");
   if (!token) {
@@ -261,23 +404,7 @@ authRoutes.get("/callback", async (c) => {
     return c.redirect("/login?error=no_membership");
   }
 
-  const sessionToken = randomToken();
-  const sessionHash = await sha256Hex(sessionToken);
-  await db.insert(sessions).values({
-    id: id(),
-    userId: user.id,
-    tenantId: membership.tenantId,
-    tokenHash: sessionHash,
-    expiresAt: addDays(SESSION_DAYS),
-  });
-
-  setCookie(c, SESSION_COOKIE, sessionToken, {
-    httpOnly: true,
-    secure: c.env.ENVIRONMENT === "production",
-    sameSite: "Lax",
-    path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
-  });
+  await issueSession(c, user.id, membership.tenantId);
 
   return c.redirect("/");
 });
@@ -429,21 +556,27 @@ authRoutes.post("/invite/accept", async (c) => {
 
   if (!user) {
     const userId = id();
+    const passwordHash = await hashPassword(body.data.password);
     await db.insert(users).values({
       id: userId,
       email: invite.email,
       name: body.data.name,
+      passwordHash,
     });
     user = {
       id: userId,
       email: invite.email,
       name: body.data.name,
+      passwordHash,
       createdAt: now,
     };
-  } else if (user.name !== body.data.name) {
+  } else {
     await db
       .update(users)
-      .set({ name: body.data.name })
+      .set({
+        name: body.data.name,
+        passwordHash: await hashPassword(body.data.password),
+      })
       .where(eq(users.id, user.id));
   }
 
@@ -472,23 +605,7 @@ authRoutes.post("/invite/accept", async (c) => {
     .set({ acceptedAt: now })
     .where(eq(invites.id, invite.id));
 
-  const sessionToken = randomToken();
-  const sessionHash = await sha256Hex(sessionToken);
-  await db.insert(sessions).values({
-    id: id(),
-    userId: user.id,
-    tenantId: invite.tenantId,
-    tokenHash: sessionHash,
-    expiresAt: addDays(SESSION_DAYS),
-  });
-
-  setCookie(c, SESSION_COOKIE, sessionToken, {
-    httpOnly: true,
-    secure: c.env.ENVIRONMENT === "production",
-    sameSite: "Lax",
-    path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
-  });
+  await issueSession(c, user.id, invite.tenantId);
 
   return c.json({ ok: true });
 });

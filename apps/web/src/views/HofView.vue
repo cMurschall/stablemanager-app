@@ -52,12 +52,20 @@ const horses = ref<Horse[]>([]);
 const archivedHorses = ref<Horse[]>([]);
 const accommodations = ref<Accommodation[]>([]);
 
-const inviteDevLink = ref("");
+const inviteLink = ref("");
 const inviteForm = ref({
   email: "",
   role: "boarder" as Role,
   name: "",
 });
+const passwordLinkDialog = ref<{
+  name: string;
+  email: string;
+  purpose: "welcome" | "reset";
+  link: string;
+  expiresAt: string;
+} | null>(null);
+const copied = ref(false);
 const removeMemberTarget = ref<Member | null>(null);
 const archiveAction = ref<{ kind: "reactivate" | "delete"; horse: Horse } | null>(null);
 const deactivateHorseTarget = ref<Horse | null>(null);
@@ -153,9 +161,10 @@ async function load() {
 async function sendInvite() {
   saving.value = true;
   error.value = "";
-  inviteDevLink.value = "";
+  inviteLink.value = "";
+  copied.value = false;
   try {
-    const res = await api<{ ok: boolean; devLink?: string }>("/api/tenants/invites", {
+    const res = await api<{ ok: boolean; inviteLink?: string }>("/api/tenants/invites", {
       method: "POST",
       body: JSON.stringify({
         email: inviteForm.value.email,
@@ -163,13 +172,51 @@ async function sendInvite() {
         name: inviteForm.value.name.trim() || undefined,
       }),
     });
-    if (res.devLink) inviteDevLink.value = res.devLink;
+    if (res.inviteLink) inviteLink.value = res.inviteLink;
     inviteForm.value = { email: "", role: "boarder", name: "" };
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
   } finally {
     saving.value = false;
+  }
+}
+
+async function createPasswordLink(member: Member, purpose: "welcome" | "reset") {
+  saving.value = true;
+  error.value = "";
+  copied.value = false;
+  try {
+    const res = await api<{
+      link: string;
+      expiresAt: string;
+      purpose: "welcome" | "reset";
+      email: string;
+      name: string;
+    }>(`/api/tenants/members/${member.userId}/password-link`, {
+      method: "POST",
+      body: JSON.stringify({ purpose }),
+    });
+    passwordLinkDialog.value = {
+      name: res.name,
+      email: res.email,
+      purpose: res.purpose,
+      link: res.link,
+      expiresAt: res.expiresAt,
+    };
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    copied.value = true;
+  } catch {
+    copied.value = false;
   }
 }
 
@@ -493,10 +540,27 @@ onMounted(load);
                   {{ t("hof.memberHorses", { n: m.horseCount ?? 0 }) }}
                 </p>
               </div>
-              <div class="flex shrink-0 items-center gap-2">
+              <div class="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
                 <span class="rounded-lg bg-brand-50 px-2 py-1 text-xs text-brand-800">
                   {{ t(`roles.${m.role}`) }}
                 </span>
+                <button
+                  v-if="!m.hasPassword"
+                  type="button"
+                  class="btn-ghost"
+                  :disabled="saving"
+                  @click="createPasswordLink(m, 'welcome')"
+                >
+                  {{ t("hof.welcomeLink") }}
+                </button>
+                <button
+                  type="button"
+                  class="btn-ghost"
+                  :disabled="saving"
+                  @click="createPasswordLink(m, 'reset')"
+                >
+                  {{ t("hof.resetLink") }}
+                </button>
                 <button
                   v-if="canRemoveMember(m)"
                   type="button"
@@ -532,16 +596,19 @@ onMounted(load);
               {{ t("hof.inviteName") }}
               <input v-model="inviteForm.name" class="field mt-1" />
             </label>
+            <p class="text-xs text-stone-500">{{ t("hof.inviteLinkHint") }}</p>
             <button type="submit" class="btn-primary" :disabled="saving">
               {{ t("hof.sendInvite") }}
             </button>
-            <a
-              v-if="inviteDevLink"
-              :href="inviteDevLink"
-              class="btn-ghost mt-2 inline-flex max-w-full break-all"
-            >
-              {{ t("hof.inviteDevLink") }}
-            </a>
+            <div v-if="inviteLink" class="space-y-2">
+              <label class="block text-sm font-medium">
+                {{ t("hof.inviteLink") }}
+                <input :value="inviteLink" readonly class="field mt-1 font-mono text-xs" />
+              </label>
+              <button type="button" class="btn-ghost" @click="copyText(inviteLink)">
+                {{ copied ? t("common.copied") : t("common.copy") }}
+              </button>
+            </div>
           </form>
           <ul class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white">
             <li v-for="inv in invites" :key="inv.id" class="px-4 py-3 text-sm">
@@ -966,6 +1033,35 @@ onMounted(load);
       </form>
     </AppDialog>
 
+    <AppDialog
+      :open="passwordLinkDialog != null"
+      :title="t('hof.passwordLinkTitle')"
+      @close="passwordLinkDialog = null"
+    >
+      <p v-if="passwordLinkDialog" class="text-sm text-stone-600">
+        {{ t("hof.passwordLinkHint") }}
+      </p>
+      <p v-if="passwordLinkDialog" class="mt-2 text-sm">
+        {{ passwordLinkDialog.name }} · {{ passwordLinkDialog.email }}
+      </p>
+      <p v-if="passwordLinkDialog" class="mt-1 text-xs text-stone-500">
+        {{ t("hof.passwordLinkExpires", { date: formatDateTime(passwordLinkDialog.expiresAt) }) }}
+      </p>
+      <label v-if="passwordLinkDialog" class="mt-3 block text-sm font-medium">
+        {{ t("hof.inviteLink") }}
+        <input :value="passwordLinkDialog.link" readonly class="field mt-1 font-mono text-xs" />
+      </label>
+      <div class="mt-4 flex justify-end gap-2">
+        <button
+          v-if="passwordLinkDialog"
+          type="button"
+          class="btn-primary"
+          @click="copyText(passwordLinkDialog.link)"
+        >
+          {{ copied ? t("common.copied") : t("common.copy") }}
+        </button>
+      </div>
+    </AppDialog>
     <ConfirmDialog
       :open="removeMemberTarget != null"
       :title="t('hof.removeMember')"

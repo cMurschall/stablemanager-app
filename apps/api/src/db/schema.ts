@@ -26,6 +26,7 @@ export const users = sqliteTable(
     id: text("id").primaryKey(),
     email: text("email").notNull(),
     name: text("name").notNull(),
+    passwordHash: text("password_hash"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -67,6 +68,27 @@ export const loginTokens = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
   (t) => [index("login_tokens_email_idx").on(t.email)],
+);
+
+export const passwordTokens = sqliteTable(
+  "password_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: text("purpose", { enum: ["welcome", "reset"] }).notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    usedAt: text("used_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    uniqueIndex("password_tokens_token_hash_uidx").on(t.tokenHash),
+    index("password_tokens_user_idx").on(t.userId),
+  ],
 );
 
 export const sessions = sqliteTable(

@@ -53,13 +53,6 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
-  async function requestMagicLink(email: string) {
-    return api<{ ok: boolean; message: string; devLink?: string }>(
-      "/api/auth/magic-link",
-      { method: "POST", body: JSON.stringify({ email }) },
-    );
-  }
-
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
     user.value = null;
@@ -87,7 +80,6 @@ export const useAuthStore = defineStore("auth", () => {
     canWrite,
     currentTenant,
     fetchMe,
-    requestMagicLink,
     logout,
     switchTenant,
   };

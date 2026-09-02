@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import {
   CreateInviteSchema,
+  CreatePasswordLinkSchema,
   CreateResourceSchema,
   CreateTrainingTypeSchema,
+  TenantBackupV1Schema,
   UpdateResourceSchema,
   UpdateTenantSchema,
 } from "@stablemanager/shared";
@@ -13,16 +15,19 @@ import {
   horseOwners,
   invites,
   memberships,
+  passwordTokens,
   resources,
   sessions,
   tenants,
   trainingTypes,
   users,
 } from "../db/schema";
-import { addDays, id, randomToken, sha256Hex } from "../lib/crypto";
+import { addDays, id, nowIso, randomToken, sha256Hex } from "../lib/crypto";
 import { sendInviteEmail } from "../lib/email";
 import { routeParam } from "../lib/params";
 import { requireRoles } from "../lib/rbac";
+import { webOrigin } from "../lib/webOrigin";
+import { exportTenantBackup, restoreTenantBackup } from "../lib/tenantBackup";
 import { authMiddleware } from "../middleware/auth";
 
 export const tenantRoutes = new Hono<{
@@ -113,6 +118,7 @@ tenantRoutes.get("/members", requireRoles("hof_admin", "staff"), async (c) => {
       email: users.email,
       name: users.name,
       role: memberships.role,
+      hasPassword: sql<number>`CASE WHEN ${users.passwordHash} IS NOT NULL THEN 1 ELSE 0 END`,
       horseCount: sql<number>`(
         select count(*) from horse_owners
         where horse_owners.tenant_id = ${tenantId}
@@ -127,6 +133,7 @@ tenantRoutes.get("/members", requireRoles("hof_admin", "staff"), async (c) => {
   return c.json({
     members: rows.map((row) => ({
       ...row,
+      hasPassword: Number(row.hasPassword ?? 0) === 1,
       horseCount: Number(row.horseCount ?? 0),
     })),
   });
@@ -174,6 +181,60 @@ tenantRoutes.delete("/members/:userId", requireRoles("hof_admin"), async (c) => 
   return c.json({ ok: true });
 });
 
+tenantRoutes.post(
+  "/members/:userId/password-link",
+  requireRoles("hof_admin"),
+  async (c) => {
+    const body = CreatePasswordLinkSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) {
+      return c.json({ error: "Ungültige Anfrage" }, 400);
+    }
+
+    const targetUserId = routeParam(c, "userId");
+    const tenantId = c.get("tenantId");
+    const db = createDb(c.env);
+
+    const membership = await db
+      .select({ userId: memberships.userId, name: users.name, email: users.email })
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, targetUserId)))
+      .get();
+
+    if (!membership) {
+      return c.json({ error: "Mitglied nicht gefunden" }, 404);
+    }
+
+    const now = nowIso();
+    await db
+      .update(passwordTokens)
+      .set({ usedAt: now })
+      .where(and(eq(passwordTokens.userId, targetUserId), isNull(passwordTokens.usedAt)));
+
+    const token = randomToken();
+    const tokenHash = await sha256Hex(token);
+    const days = body.data.purpose === "welcome" ? 14 : 7;
+    const expiresAt = addDays(days);
+    await db.insert(passwordTokens).values({
+      id: id(),
+      userId: targetUserId,
+      purpose: body.data.purpose,
+      tokenHash,
+      expiresAt,
+    });
+
+    const link = `${webOrigin(c)}/set-password/${token}`;
+    return c.json({
+      ok: true,
+      link,
+      expiresAt,
+      purpose: body.data.purpose,
+      email: membership.email,
+      name: membership.name,
+    });
+  },
+);
+
 tenantRoutes.get("/invites", requireRoles("hof_admin"), async (c) => {
   const db = createDb(c.env);
   const rows = await db
@@ -217,6 +278,7 @@ tenantRoutes.post("/invites", requireRoles("hof_admin"), async (c) => {
 
   const token = randomToken();
   const tokenHash = await sha256Hex(token);
+  const expiresAt = addDays(7);
   await db.insert(invites).values({
     id: id(),
     tenantId: tenant.id,
@@ -224,19 +286,17 @@ tenantRoutes.post("/invites", requireRoles("hof_admin"), async (c) => {
     role: body.data.role,
     name: body.data.name ?? null,
     tokenHash,
-    expiresAt: addDays(7),
+    expiresAt,
     invitedBy: c.get("userId"),
   });
 
-  const origin = new URL(c.req.url).origin;
-  const link = `${origin}/invite/${token}`;
-  const result = await sendInviteEmail(c.env, body.data.email, link, tenant.name);
+  const link = `${webOrigin(c)}/invite/${token}`;
+  await sendInviteEmail(c.env, body.data.email, link, tenant.name);
 
   return c.json({
     ok: true,
-    ...(c.env.ENVIRONMENT !== "production" && !result.delivered
-      ? { devLink: result.link }
-      : {}),
+    inviteLink: link,
+    expiresAt,
   });
 });
 
@@ -318,4 +378,60 @@ tenantRoutes.delete("/resources/:id", requireRoles("hof_admin"), async (c) => {
 
   await db.delete(resources).where(eq(resources.id, existing.id));
   return c.json({ ok: true });
+});
+
+tenantRoutes.get("/backup", requireRoles("hof_admin"), async (c) => {
+  const db = createDb(c.env);
+  const tenantId = c.get("tenantId");
+  try {
+    const backup = await exportTenantBackup(db, tenantId);
+    const safeName = backup.tenant.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40) || "hof";
+    const day = backup.exportedAt.slice(0, 10);
+    const filename = `${safeName}-${day}.json`;
+    return new Response(JSON.stringify(backup, null, 2), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Backup fehlgeschlagen";
+    return c.json({ error: message }, 500);
+  }
+});
+
+tenantRoutes.post("/restore", requireRoles("hof_admin"), async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Ungültiges JSON" }, 400);
+  }
+
+  const parsed = TenantBackupV1Schema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { error: "Ungültiges Backup", details: parsed.error.flatten() },
+      400,
+    );
+  }
+
+  const db = createDb(c.env);
+  try {
+    const summary = await restoreTenantBackup(
+      db,
+      c.get("tenantId"),
+      c.get("userId"),
+      parsed.data,
+    );
+    return c.json({ ok: true, summary });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Wiederherstellung fehlgeschlagen";
+    return c.json({ error: message }, 500);
+  }
 });
