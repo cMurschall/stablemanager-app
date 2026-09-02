@@ -106,7 +106,9 @@ export const CreateHorseSchema = z.object({
   notes: z.string().max(4000).optional().nullable(),
 });
 
-export const UpdateHorseSchema = CreateHorseSchema.partial();
+export const UpdateHorseSchema = CreateHorseSchema.partial().extend({
+  active: z.boolean().optional(),
+});
 
 export const CreateAccommodationSchema = z
   .object({

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import {
   CreateInviteSchema,
   CreateResourceSchema,
@@ -10,9 +10,11 @@ import {
 import type { AppVariables, Env } from "../env";
 import { createDb } from "../db/client";
 import {
+  horseOwners,
   invites,
   memberships,
   resources,
+  sessions,
   tenants,
   trainingTypes,
   users,
@@ -104,19 +106,72 @@ tenantRoutes.patch("/current", requireRoles("hof_admin"), async (c) => {
 
 tenantRoutes.get("/members", requireRoles("hof_admin", "staff"), async (c) => {
   const db = createDb(c.env);
+  const tenantId = c.get("tenantId");
   const rows = await db
     .select({
       userId: users.id,
       email: users.email,
       name: users.name,
       role: memberships.role,
+      horseCount: sql<number>`(
+        select count(*) from horse_owners
+        where horse_owners.tenant_id = ${tenantId}
+          and horse_owners.user_id = ${users.id}
+      )`,
     })
     .from(memberships)
     .innerJoin(users, eq(memberships.userId, users.id))
-    .where(eq(memberships.tenantId, c.get("tenantId")))
+    .where(eq(memberships.tenantId, tenantId))
     .all();
 
-  return c.json({ members: rows });
+  return c.json({
+    members: rows.map((row) => ({
+      ...row,
+      horseCount: Number(row.horseCount ?? 0),
+    })),
+  });
+});
+
+tenantRoutes.delete("/members/:userId", requireRoles("hof_admin"), async (c) => {
+  const targetUserId = routeParam(c, "userId");
+  const tenantId = c.get("tenantId");
+  const db = createDb(c.env);
+
+  const membership = await db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, targetUserId)))
+    .get();
+
+  if (!membership) {
+    return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  }
+
+  if (membership.role === "hof_admin") {
+    const adminCount = await db
+      .select({ n: count() })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, "hof_admin")))
+      .get();
+    if ((adminCount?.n ?? 0) <= 1) {
+      return c.json({ error: "Der letzte Hof-Admin kann nicht entfernt werden" }, 400);
+    }
+  }
+
+  await db
+    .delete(horseOwners)
+    .where(and(eq(horseOwners.tenantId, tenantId), eq(horseOwners.userId, targetUserId)));
+
+  await db
+    .delete(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, targetUserId)));
+
+  await db
+    .update(sessions)
+    .set({ tenantId: null })
+    .where(and(eq(sessions.userId, targetUserId), eq(sessions.tenantId, tenantId)));
+
+  return c.json({ ok: true });
 });
 
 tenantRoutes.get("/invites", requireRoles("hof_admin"), async (c) => {

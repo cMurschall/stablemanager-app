@@ -1,29 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { Role } from "@stablemanager/shared";
 import { api } from "@/lib/api";
-import { formatDateTime } from "@/lib/dates";
-import type { Invite, Member, Resource, Tenant, TrainingType } from "@/types/api";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import type { Resource, Tenant, TrainingType } from "@/types/api";
 
 const { t } = useI18n();
 
 const tenant = ref<Tenant | null>(null);
-const members = ref<Member[]>([]);
-const invites = ref<Invite[]>([]);
 const resources = ref<Resource[]>([]);
 const trainingTypes = ref<TrainingType[]>([]);
 const loading = ref(true);
 const error = ref("");
 const saving = ref(false);
-const inviteDevLink = ref("");
+const deleteTarget = ref<{ kind: "resource" | "trainingType"; id: string } | null>(null);
 
 const tenantForm = ref({ name: "", timezone: "Europe/Berlin", maxDailyServiceTasks: 3 });
-const inviteForm = ref({
-  email: "",
-  role: "boarder" as Role,
-  name: "",
-});
 const resourceForm = ref({ name: "" });
 const showResourceForm = ref(false);
 const trainingTypeName = ref("");
@@ -32,10 +24,8 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [tRes, mRes, iRes, rRes, trainingRes] = await Promise.all([
+    const [tRes, rRes, trainingRes] = await Promise.all([
       api<{ tenant: Tenant }>("/api/tenants/current"),
-      api<{ members: Member[] }>("/api/tenants/members"),
-      api<{ invites: Invite[] }>("/api/tenants/invites"),
       api<{ resources: Resource[] }>("/api/tenants/resources"),
       api<{ trainingTypes: TrainingType[] }>("/api/tenants/training-types"),
     ]);
@@ -45,8 +35,6 @@ async function load() {
       timezone: tRes.tenant.timezone,
       maxDailyServiceTasks: tRes.tenant.maxDailyServiceTasks,
     };
-    members.value = mRes.members;
-    invites.value = iRes.invites;
     resources.value = rRes.resources;
     trainingTypes.value = trainingRes.trainingTypes;
   } catch (e) {
@@ -76,32 +64,6 @@ async function saveTenant() {
   }
 }
 
-async function sendInvite() {
-  saving.value = true;
-  error.value = "";
-  inviteDevLink.value = "";
-  try {
-    const res = await api<{ ok: boolean; devLink?: string }>(
-      "/api/tenants/invites",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          email: inviteForm.value.email,
-          role: inviteForm.value.role,
-          name: inviteForm.value.name.trim() || undefined,
-        }),
-      },
-    );
-    if (res.devLink) inviteDevLink.value = res.devLink;
-    inviteForm.value = { email: "", role: "boarder", name: "" };
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  } finally {
-    saving.value = false;
-  }
-}
-
 async function createResource() {
   saving.value = true;
   error.value = "";
@@ -121,13 +83,7 @@ async function createResource() {
 }
 
 async function deleteResource(id: string) {
-  if (!confirm(t("common.confirmDelete"))) return;
-  try {
-    await api(`/api/tenants/resources/${id}`, { method: "DELETE" });
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  }
+  deleteTarget.value = { kind: "resource", id };
 }
 
 async function createTrainingType() {
@@ -148,9 +104,19 @@ async function createTrainingType() {
 }
 
 async function deleteTrainingType(id: string) {
-  if (!confirm(t("common.confirmDelete"))) return;
+  deleteTarget.value = { kind: "trainingType", id };
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return;
+  const target = deleteTarget.value;
+  deleteTarget.value = null;
   try {
-    await api(`/api/tenants/training-types/${id}`, { method: "DELETE" });
+    if (target.kind === "resource") {
+      await api(`/api/tenants/resources/${target.id}`, { method: "DELETE" });
+    } else {
+      await api(`/api/tenants/training-types/${target.id}`, { method: "DELETE" });
+    }
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -190,28 +156,7 @@ onMounted(load);
       </form>
     </section>
 
-      <section class="groupbox">
-      <h2 class="font-medium text-stone-800">{{ t("settings.members") }}</h2>
-      <ul
-        class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
-      >
-        <li
-          v-for="m in members"
-          :key="m.userId"
-          class="flex items-center justify-between gap-3 px-4 py-3"
-        >
-          <div>
-            <p class="font-medium">{{ m.name }}</p>
-            <p class="text-xs text-stone-500">{{ m.email }}</p>
-          </div>
-          <span class="rounded-lg bg-brand-50 px-2 py-1 text-xs text-brand-800">
-            {{ t(`roles.${m.role}`) }}
-          </span>
-        </li>
-      </ul>
-    </section>
-
-      <section class="groupbox">
+    <section class="groupbox">
       <h2 class="font-medium text-stone-800">{{ t("settings.trainingTypes") }}</h2>
       <form class="flex gap-2" @submit.prevent="createTrainingType">
         <input v-model="trainingTypeName" required class="field flex-1" :placeholder="t('settings.trainingTypeName')" />
@@ -220,66 +165,9 @@ onMounted(load);
       <ul class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white">
         <li v-for="trainingType in trainingTypes" :key="trainingType.id" class="flex items-center justify-between gap-3 px-4 py-3">
           <span class="font-medium">{{ trainingType.name }}</span>
-          <button type="button" class="text-sm text-red-600" @click="deleteTrainingType(trainingType.id)">{{ t("common.delete") }}</button>
+          <button type="button" class="btn-danger" @click="deleteTrainingType(trainingType.id)">{{ t("common.delete") }}</button>
         </li>
         <li v-if="!trainingTypes.length" class="px-4 py-3 text-sm text-stone-500">{{ t("common.empty") }}</li>
-      </ul>
-    </section>
-
-      <section class="groupbox">
-      <h2 class="font-medium text-stone-800">{{ t("settings.invites") }}</h2>
-      <form
-        class="space-y-3 rounded-2xl border border-stone-200 bg-white p-4"
-        @submit.prevent="sendInvite"
-      >
-        <label class="block text-sm font-medium">
-          {{ t("settings.inviteEmail") }}
-          <input
-            v-model="inviteForm.email"
-            type="email"
-            required
-            class="field mt-1"
-          />
-        </label>
-        <label class="block text-sm font-medium">
-          {{ t("settings.inviteRole") }}
-          <select v-model="inviteForm.role" class="field mt-1">
-            <option value="hof_admin">{{ t("roles.hof_admin") }}</option>
-            <option value="staff">{{ t("roles.staff") }}</option>
-            <option value="boarder">{{ t("roles.boarder") }}</option>
-          </select>
-        </label>
-        <label class="block text-sm font-medium">
-          {{ t("settings.inviteName") }}
-          <input v-model="inviteForm.name" class="field mt-1" />
-        </label>
-        <button type="submit" class="btn-primary" :disabled="saving">
-          {{ t("settings.sendInvite") }}
-        </button>
-        <a
-          v-if="inviteDevLink"
-          :href="inviteDevLink"
-          class="mt-2 block break-all text-sm text-brand-700 underline"
-        >
-          {{ t("settings.inviteDevLink") }}
-        </a>
-      </form>
-
-      <ul
-        class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
-      >
-        <li v-for="inv in invites" :key="inv.id" class="px-4 py-3 text-sm">
-          <p class="font-medium">
-            {{ inv.email }} · {{ t(`roles.${inv.role}`) }}
-          </p>
-          <p class="text-xs text-stone-500">
-            {{ t("settings.pending") }} · bis
-            {{ formatDateTime(inv.expiresAt) }}
-          </p>
-        </li>
-        <li v-if="!invites.length" class="px-4 py-3 text-sm text-stone-500">
-          {{ t("common.empty") }}
-        </li>
       </ul>
     </section>
 
@@ -331,7 +219,7 @@ onMounted(load);
           </div>
           <button
             type="button"
-            class="text-sm text-red-600"
+            class="btn-danger"
             @click="deleteResource(r.id)"
           >
             {{ t("common.delete") }}
@@ -342,5 +230,14 @@ onMounted(load);
         </li>
       </ul>
     </section>
+
+    <ConfirmDialog
+      :open="deleteTarget != null"
+      :title="t('common.delete')"
+      :message="t('common.confirmDelete')"
+      :confirm-label="t('common.delete')"
+      @close="deleteTarget = null"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

@@ -2,6 +2,7 @@ name = "stablemanager-app"
 main = "src/index.ts"
 compatibility_date = "2025-03-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "34589312af341ae74d1e2693d60b9583"
 
 [[d1_databases]]
 binding = "DB"

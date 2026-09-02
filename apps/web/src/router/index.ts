@@ -22,7 +22,12 @@ const routes: RouteRecordRaw[] = [
     path: "/",
     component: () => import("@/layouts/AppLayout.vue"),
     children: [
-      { path: "", redirect: "/horses" },
+      { path: "", redirect: "/home" },
+      {
+        path: "home",
+        name: "home",
+        component: () => import("@/views/HomeView.vue"),
+      },
       {
         path: "horses",
         name: "horses",
@@ -69,6 +74,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/TrainingView.vue"),
       },
       {
+        path: "hof",
+        name: "hof",
+        component: () => import("@/views/HofView.vue"),
+        meta: { admin: true },
+      },
+      {
         path: "settings",
         name: "settings",
         component: () => import("@/views/SettingsView.vue"),
@@ -91,7 +102,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta.public) {
     if (auth.isAuthenticated && to.name === "login") {
-      return { name: "horses" };
+      return { name: "home" };
     }
     return true;
   }
@@ -101,7 +112,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.admin && !auth.isAdmin) {
-    return { name: "horses" };
+    return { name: "home" };
   }
 
   return true;

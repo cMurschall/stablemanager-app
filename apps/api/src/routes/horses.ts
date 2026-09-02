@@ -35,7 +35,18 @@ horseRoutes.get("/", async (c) => {
   const role = c.get("role");
   const userId = c.get("userId");
 
+  const activeParam = c.req.query("active");
   const conditions = [eq(horses.tenantId, tenantId)];
+
+  if (activeParam === "0" || activeParam === "false") {
+    if (role !== "hof_admin") {
+      return c.json({ error: "Keine Berechtigung" }, 403);
+    }
+    conditions.push(eq(horses.active, false));
+  } else {
+    conditions.push(eq(horses.active, true));
+  }
+
   if (isBoarderOnly(role)) {
     conditions.push(horseOwnerAccess(horses.id, tenantId, userId));
   }
@@ -82,6 +93,10 @@ horseRoutes.get("/:id", async (c) => {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
+  if (!horse.active && c.get("role") !== "hof_admin") {
+    return c.json({ error: "Pferd nicht gefunden" }, 404);
+  }
+
   const accommodationHistory = await listAccommodationHistory(db, horse.id);
   const ownerIds = await horseOwnerIds(db, c.get("tenantId"), [horse.id]);
   const ownerNames = await db
@@ -111,11 +126,15 @@ horseRoutes.get("/:id/accommodation-history", async (c) => {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
+  if (!horse.active && c.get("role") !== "hof_admin") {
+    return c.json({ error: "Pferd nicht gefunden" }, 404);
+  }
+
   const accommodationHistory = await listAccommodationHistory(db, horse.id);
   return c.json({ accommodationHistory });
 });
 
-horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
+horseRoutes.post("/", requireRoles("hof_admin"), async (c) => {
   const body = CreateHorseSchema.safeParse(await c.req.json());
   if (!body.success) {
     return c.json({ error: "Ungültige Anfrage", details: body.error.flatten() }, 400);
@@ -131,6 +150,7 @@ horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
     birthYear: body.data.birthYear ?? null,
     accommodationId: body.data.accommodationId ?? null,
     notes: body.data.notes ?? null,
+    active: true,
   };
 
   const ownerUserIds = [...new Set(body.data.ownerUserIds)];
@@ -169,7 +189,8 @@ horseRoutes.post("/", requireRoles("hof_admin", "staff"), async (c) => {
 });
 
 horseRoutes.patch("/:id", async (c) => {
-  if (!canWriteStaff(c.get("role"))) {
+  const role = c.get("role");
+  if (!canWriteStaff(role)) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
 
@@ -190,6 +211,20 @@ horseRoutes.patch("/:id", async (c) => {
     return c.json({ error: "Pferd nicht gefunden" }, 404);
   }
 
+  if (role === "staff") {
+    const keys = Object.keys(body.data).filter((key) => body.data[key as keyof typeof body.data] !== undefined);
+    if (keys.length !== 1 || keys[0] !== "accommodationId") {
+      return c.json({ error: "Mitarbeiter dürfen nur die Unterbringung ändern" }, 403);
+    }
+    if (!existing.active) {
+      return c.json({ error: "Pferd nicht gefunden" }, 404);
+    }
+  }
+
+  if (body.data.active !== undefined && role !== "hof_admin") {
+    return c.json({ error: "Nur der Hof-Admin kann Pferde aktivieren oder deaktivieren" }, 403);
+  }
+
   const updatedAt = nowIso();
   const ownerUserIds = body.data.ownerUserIds === undefined
     ? undefined
@@ -197,15 +232,40 @@ horseRoutes.patch("/:id", async (c) => {
   if (ownerUserIds && !(await ownersAreTenantMembers(db, existing.tenantId, ownerUserIds))) {
     return c.json({ error: "Besitzer muss Mitglied dieses Hofs sein" }, 400);
   }
-  if (body.data.accommodationId && body.data.accommodationId !== existing.accommodationId) {
-    const accommodation = await db.select({ active: accommodations.active }).from(accommodations).where(and(eq(accommodations.id, body.data.accommodationId), eq(accommodations.tenantId, existing.tenantId))).get();
+
+  const deactivating = body.data.active === false && existing.active;
+  let nextAccommodationId =
+    body.data.accommodationId !== undefined
+      ? body.data.accommodationId
+      : existing.accommodationId;
+
+  if (deactivating) {
+    nextAccommodationId = null;
+  }
+
+  if (
+    nextAccommodationId &&
+    nextAccommodationId !== existing.accommodationId
+  ) {
+    const accommodation = await db
+      .select({ active: accommodations.active })
+      .from(accommodations)
+      .where(and(eq(accommodations.id, nextAccommodationId), eq(accommodations.tenantId, existing.tenantId)))
+      .get();
     if (!accommodation?.active) return c.json({ error: "Unterbringung ist nicht aktiv" }, 400);
   }
+
   const { ownerUserIds: _ownerUserIds, ...horsePatch } = body.data;
+  const patch = {
+    ...horsePatch,
+    ...(deactivating ? { accommodationId: null as string | null } : {}),
+    updatedAt,
+  };
+
   try {
     await db
       .update(horses)
-      .set({ ...horsePatch, updatedAt })
+      .set(patch)
       .where(eq(horses.id, existing.id));
     if (ownerUserIds !== undefined) {
       await db.delete(horseOwners).where(eq(horseOwners.horseId, existing.id));
@@ -221,25 +281,29 @@ horseRoutes.patch("/:id", async (c) => {
     throw e;
   }
 
-  if (
-    body.data.accommodationId !== undefined &&
-    body.data.accommodationId !== existing.accommodationId
-  ) {
+  if (nextAccommodationId !== existing.accommodationId) {
     await recordAccommodationChange(db, {
       tenantId: existing.tenantId,
       horseId: existing.id,
       fromAccommodationId: existing.accommodationId,
-      toAccommodationId: body.data.accommodationId,
+      toAccommodationId: nextAccommodationId,
       changedBy: c.get("userId"),
       at: updatedAt,
     });
   }
 
   const responseOwnerIds = ownerUserIds ?? (await horseOwnerIds(db, existing.tenantId, [existing.id])).get(existing.id) ?? [];
-  return c.json({ horse: { ...existing, ...horsePatch, ownerUserIds: responseOwnerIds, updatedAt } });
+  return c.json({
+    horse: {
+      ...existing,
+      ...patch,
+      ownerUserIds: responseOwnerIds,
+      updatedAt,
+    },
+  });
 });
 
-horseRoutes.delete("/:id", requireRoles("hof_admin", "staff"), async (c) => {
+horseRoutes.delete("/:id", requireRoles("hof_admin"), async (c) => {
   const horseId = routeParam(c, "id");
   const db = createDb(c.env);
   const existing = await db

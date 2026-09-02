@@ -12,6 +12,7 @@
     "db:generate": "pnpm --filter @stablemanager/api db:generate",
     "db:migrate:local": "pnpm --filter @stablemanager/api db:migrate:local",
     "db:seed:local": "pnpm --filter @stablemanager/api seed:local",
+    "db:seed:remote": "pnpm --filter @stablemanager/api seed:remote",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @stablemanager/api test:api"
   },

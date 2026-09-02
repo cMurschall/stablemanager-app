@@ -4,7 +4,10 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Role } from "@stablemanager/shared";
 import { useAuthStore } from "@/stores/auth";
+import { useNotificationsStore } from "@/stores/notifications";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/dates";
+import AppDialog from "@/components/AppDialog.vue";
 
 type DevUser = {
   id: string;
@@ -15,9 +18,10 @@ type DevUser = {
 
 const { t } = useI18n();
 const auth = useAuthStore();
+const notifications = useNotificationsStore();
 const router = useRouter();
-const unread = ref(0);
 const menuOpen = ref(false);
+const inboxOpen = ref(false);
 const devUsers = ref<DevUser[]>([]);
 const switching = ref(false);
 
@@ -36,12 +40,7 @@ const sortedDevUsers = computed(() =>
 );
 
 onMounted(async () => {
-  try {
-    const data = await api<{ unreadCount: number }>("/api/notifications?limit=1");
-    unread.value = data.unreadCount;
-  } catch {
-    /* ignore */
-  }
+  await notifications.fetchUnreadCount();
   try {
     const data = await api<{ users: DevUser[]; environment: string }>(
       "/api/auth/dev-users",
@@ -80,18 +79,47 @@ async function loginAs(email: string) {
   }
 }
 
+async function openInbox() {
+  inboxOpen.value = true;
+  await notifications.fetchList();
+}
+
+async function onMarkRead(id: string) {
+  try {
+    await notifications.markRead(id);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onMarkAllRead() {
+  try {
+    await notifications.markAllRead();
+  } catch {
+    /* ignore */
+  }
+}
+
 const links = [
-  { to: "/horses", label: "nav.horses" },
-  { to: "/housing", label: "nav.housing" },
+  { to: "/home", label: "nav.home" },
+  { to: "/hof", label: "nav.hof", adminOnly: true },
+  { to: "/horses", label: "nav.horses", hideForAdmin: true },
+  { to: "/housing", label: "nav.housing", hideForAdmin: true },
   { to: "/calendar", label: "nav.calendar" },
-  { to: "/board", label: "nav.board" },
+  { to: "/training", label: "nav.training" },
   { to: "/farrier", label: "nav.farrier" },
   { to: "/services", label: "nav.services" },
-  { to: "/training", label: "nav.training" },
+  { to: "/board", label: "nav.board" },
   { to: "/reminders", label: "nav.reminders" },
 ];
 
-const visibleLinks = computed(() => links);
+const visibleLinks = computed(() =>
+  links.filter((link) => {
+    if (link.adminOnly && !auth.isAdmin) return false;
+    if (link.hideForAdmin && auth.isAdmin) return false;
+    return true;
+  }),
+);
 </script>
 
 <template>
@@ -112,7 +140,7 @@ const visibleLinks = computed(() => links);
             <p class="text-xs text-stone-500">
               {{ auth.currentTenant?.tenantName ?? "—" }}
               <span v-if="auth.currentRole" class="text-stone-400">
-                · {{ auth.currentRole }}
+                · {{ t(`roles.${auth.currentRole}`) }}
               </span>
             </p>
           </div>
@@ -129,7 +157,7 @@ const visibleLinks = computed(() => links);
           >
             <option disabled value="">Login as…</option>
             <option v-for="u in sortedDevUsers" :key="u.id" :value="u.email">
-              {{ u.name }} ({{ u.role }})
+              {{ u.name }} ({{ t(`roles.${u.role}`) }})
             </option>
           </select>
           <select
@@ -146,22 +174,27 @@ const visibleLinks = computed(() => links);
               {{ m.tenantName }}
             </option>
           </select>
-          <RouterLink
-            to="/reminders"
+          <button
+            type="button"
             class="relative rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
-            :aria-label="unread ? `${unread} ungelesene Benachrichtigungen` : 'Benachrichtigungen'"
+            :aria-label="
+              notifications.unreadCount
+                ? `${notifications.unreadCount} ungelesene Benachrichtigungen`
+                : t('nav.notifications')
+            "
+            @click="openInbox"
           >
             🔔
             <span
-              v-if="unread > 0"
+              v-if="notifications.unreadCount > 0"
               class="absolute -right-1 -top-1 rounded-full bg-brand-600 px-1.5 text-[10px] text-white"
             >
-              {{ unread }}
+              {{ notifications.unreadCount }}
             </span>
-          </RouterLink>
+          </button>
           <button
             type="button"
-            class="rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+            class="btn-ghost"
             @click="onLogout"
           >
             {{ t("nav.logout") }}
@@ -223,5 +256,68 @@ const visibleLinks = computed(() => links);
     <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
       <RouterView />
     </main>
+
+    <AppDialog
+      :open="inboxOpen"
+      :title="t('notifications.title')"
+      @close="inboxOpen = false"
+    >
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm text-stone-500">
+          {{
+            notifications.unreadCount
+              ? `${notifications.unreadCount} ungelesen`
+              : t("notifications.empty")
+          }}
+        </p>
+        <button
+          v-if="notifications.items.some((n) => !n.readAt)"
+          type="button"
+          class="btn-ghost"
+          @click="onMarkAllRead"
+        >
+          {{ t("common.markAllRead") }}
+        </button>
+      </div>
+      <p v-if="notifications.loading" class="mt-4 text-sm text-stone-500">
+        {{ t("common.loading") }}
+      </p>
+      <ul
+        v-else
+        class="mt-4 divide-y divide-stone-200 rounded-2xl border border-stone-200"
+      >
+        <li
+          v-for="n in notifications.items"
+          :key="n.id"
+          class="flex items-start justify-between gap-3 px-4 py-3"
+          :class="!n.readAt ? 'bg-brand-50/50' : ''"
+        >
+          <div>
+            <p class="font-medium">
+              <span v-if="!n.readAt" class="mr-1 text-xs text-brand-700">
+                {{ t("common.unread") }}
+              </span>
+              {{ n.title }}
+            </p>
+            <p v-if="n.body" class="text-sm text-stone-600">{{ n.body }}</p>
+            <p class="text-xs text-stone-500">{{ formatDateTime(n.createdAt) }}</p>
+          </div>
+          <button
+            v-if="!n.readAt"
+            type="button"
+            class="btn-ghost shrink-0"
+            @click="onMarkRead(n.id)"
+          >
+            {{ t("common.markRead") }}
+          </button>
+        </li>
+        <li
+          v-if="!notifications.items.length"
+          class="px-4 py-3 text-sm text-stone-500"
+        >
+          {{ t("notifications.empty") }}
+        </li>
+      </ul>
+    </AppDialog>
   </div>
 </template>

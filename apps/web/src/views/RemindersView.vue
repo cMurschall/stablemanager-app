@@ -9,14 +9,14 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import AppDialog from "@/components/AppDialog.vue";
 import HorseSelect from "@/components/HorseSelect.vue";
-import type { CareEvent, Horse, Notification } from "@/types/api";
+import type { CareEvent, Horse } from "@/types/api";
 
 const { t } = useI18n();
 const auth = useAuthStore();
 
 const careEvents = ref<CareEvent[]>([]);
-const notifications = ref<Notification[]>([]);
 const horses = ref<Horse[]>([]);
 const loading = ref(true);
 const error = ref("");
@@ -35,15 +35,11 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [care, notif, h] = await Promise.all([
+    const [care, h] = await Promise.all([
       api<{ careEvents: CareEvent[] }>("/api/care-events?status=open"),
-      api<{ notifications: Notification[]; unreadCount: number }>(
-        "/api/notifications",
-      ),
       api<{ horses: Horse[] }>("/api/horses"),
     ]);
     careEvents.value = care.careEvents;
-    notifications.value = notif.notifications;
     horses.value = h.horses;
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -103,24 +99,6 @@ async function complete(id: string) {
   }
 }
 
-async function markRead(id: string) {
-  try {
-    await api(`/api/notifications/${id}/read`, { method: "POST" });
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  }
-}
-
-async function markAllRead() {
-  try {
-    await api("/api/notifications/read-all", { method: "POST" });
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  }
-}
-
 onMounted(load);
 </script>
 
@@ -144,7 +122,7 @@ onMounted(load);
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
     <section class="groupbox">
-      <h2 class="font-medium text-stone-800">{{ t("reminders.careEvents") }}</h2>
+      <h2 class="groupbox-title">{{ t("reminders.careEvents") }}</h2>
       <ul
         class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
       >
@@ -177,113 +155,63 @@ onMounted(load);
           </button>
         </li>
         <li v-if="!careEvents.length" class="px-4 py-3 text-sm text-stone-500">
-          {{ t("reminders.noneCare") }}
-        </li>
-      </ul>
-    </section>
-
-    <section class="groupbox">
-      <div class="flex items-center justify-between">
-        <h2 class="font-medium text-stone-800">
-          {{ t("reminders.notifications") }}
-        </h2>
-        <button
-          v-if="notifications.some((n) => !n.readAt)"
-          type="button"
-          class="text-sm text-brand-700"
-          @click="markAllRead"
-        >
-          {{ t("common.markAllRead") }}
-        </button>
-      </div>
-      <ul
-        class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
-      >
-        <li
-          v-for="n in notifications"
-          :key="n.id"
-          class="flex items-start justify-between gap-3 px-4 py-3"
-          :class="!n.readAt ? 'bg-brand-50/50' : ''"
-        >
-          <div>
-            <p class="font-medium">
-              <span v-if="!n.readAt" class="mr-1 text-xs text-brand-700">
-                {{ t("common.unread") }}
-              </span>
-              {{ n.title }}
-            </p>
-            <p v-if="n.body" class="text-sm text-stone-600">{{ n.body }}</p>
-            <p class="text-xs text-stone-500">
-              {{ formatDateTime(n.createdAt) }}
-            </p>
-          </div>
+          <p>{{ t("reminders.noneCare") }}</p>
+          <p v-if="auth.canWrite" class="mt-1 text-stone-500">
+            {{ t("reminders.noneCareHint") }}
+          </p>
           <button
-            v-if="!n.readAt"
+            v-if="auth.canWrite"
             type="button"
-            class="text-sm text-brand-700"
-            @click="markRead(n.id)"
+            class="btn-primary mt-3"
+            @click="openCreate"
           >
-            {{ t("common.markRead") }}
+            {{ t("reminders.newEvent") }}
           </button>
         </li>
-        <li
-          v-if="!notifications.length"
-          class="px-4 py-3 text-sm text-stone-500"
-        >
-          {{ t("reminders.noneNotif") }}
-        </li>
       </ul>
     </section>
 
-    <div
-      v-if="showForm"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showForm = false"
+    <AppDialog
+      :open="showForm"
+      :title="t('reminders.newEvent')"
+      @close="showForm = false"
     >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="createEvent"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">
-          {{ t("reminders.newEvent") }}
-        </h2>
-        <div class="mt-4 grid gap-3">
-          <label class="text-sm font-medium">
-            {{ t("reminders.horse") }}
-            <HorseSelect v-model="form.horseId" :horses="horses" required />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("reminders.type") }}
-            <select v-model="form.type" class="field mt-1">
-              <option value="farrier">{{ t("care.farrier") }}</option>
-              <option value="vaccination">{{ t("care.vaccination") }}</option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("reminders.dueAt") }}
-            <input
-              v-model="form.dueAt"
-              type="datetime-local"
-              required
-              class="field mt-1"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("reminders.intervalDays") }}
-            <input
-              v-model="form.intervalDays"
-              type="number"
-              min="1"
-              max="730"
-              class="field mt-1"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("reminders.notes") }}
-            <textarea v-model="form.notes" rows="2" class="field mt-1" />
-          </label>
-        </div>
-        <div class="mt-5 flex gap-2">
+      <form class="grid gap-3" @submit.prevent="createEvent">
+        <label class="text-sm font-medium">
+          {{ t("reminders.horse") }}
+          <HorseSelect v-model="form.horseId" :horses="horses" required />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("reminders.type") }}
+          <select v-model="form.type" class="field mt-1">
+            <option value="farrier">{{ t("care.farrier") }}</option>
+            <option value="vaccination">{{ t("care.vaccination") }}</option>
+          </select>
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("reminders.dueAt") }}
+          <input
+            v-model="form.dueAt"
+            type="datetime-local"
+            required
+            class="field mt-1"
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("reminders.intervalDays") }}
+          <input
+            v-model="form.intervalDays"
+            type="number"
+            min="1"
+            max="730"
+            class="field mt-1"
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("reminders.notes") }}
+          <textarea v-model="form.notes" rows="2" class="field mt-1" />
+        </label>
+        <div class="mt-2 flex gap-2">
           <button type="button" class="btn-ghost flex-1" @click="showForm = false">
             {{ t("common.cancel") }}
           </button>
@@ -292,6 +220,6 @@ onMounted(load);
           </button>
         </div>
       </form>
-    </div>
+    </AppDialog>
   </div>
 </template>

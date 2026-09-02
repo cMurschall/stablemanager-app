@@ -68,7 +68,7 @@ async function loginAs(user: DevUser) {
       body: JSON.stringify({ email: user.email }),
     });
     await auth.fetchMe();
-    await router.push({ name: "horses" });
+    await router.push({ name: "home" });
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("login.error");
   } finally {
@@ -90,7 +90,7 @@ async function startAsAdmin() {
       body: JSON.stringify({ email: admin.email }),
     });
     await auth.fetchMe();
-    await router.push({ name: "horses" });
+    await router.push({ name: "home" });
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("login.error");
     await loadUsers();
@@ -152,7 +152,7 @@ onMounted(loadUsers);
       <button
         v-if="!needsBootstrap"
         type="button"
-        class="mt-4 text-sm text-stone-500 underline"
+        class="btn-ghost mt-4"
         :disabled="loading"
         @click="loadUsers"
       >

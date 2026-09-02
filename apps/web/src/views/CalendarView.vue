@@ -13,6 +13,8 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import AppDialog from "@/components/AppDialog.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { Booking, Member, Resource } from "@/types/api";
 
 const { t } = useI18n();
@@ -26,6 +28,7 @@ const loading = ref(true);
 const error = ref("");
 const showForm = ref(false);
 const saving = ref(false);
+const deleteId = ref<string | null>(null);
 
 const form = ref({
   resourceId: "",
@@ -56,6 +59,11 @@ function bookingsFor(day: Date, resourceId: string): Booking[] {
   return bookingsForDay(day)
     .filter((booking) => booking.resourceId === resourceId)
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
+function resourcesWithBookings(day: Date): Resource[] {
+  const ids = new Set(bookingsForDay(day).map((b) => b.resourceId));
+  return trackResources.value.filter((r) => ids.has(r.id));
 }
 
 async function loadMeta() {
@@ -134,8 +142,10 @@ async function createBooking() {
   }
 }
 
-async function deleteBooking(id: string) {
-  if (!confirm(t("common.confirmDelete"))) return;
+async function confirmDelete() {
+  if (!deleteId.value) return;
+  const id = deleteId.value;
+  deleteId.value = null;
   try {
     await api(`/api/bookings/${id}`, { method: "DELETE" });
     await loadBookings();
@@ -185,7 +195,7 @@ onMounted(async () => {
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <div class="groupbox overflow-x-auto">
+    <div class="space-y-3">
       <section
         v-for="day in days"
         :key="dayKey(day)"
@@ -206,102 +216,122 @@ onMounted(async () => {
           <button
             v-if="auth.canWrite"
             type="button"
-            class="text-xs font-medium text-brand-700"
+            class="btn-ghost"
             :aria-label="`Buchung für ${day.toLocaleDateString('de-DE')} anlegen`"
             @click="openCreate(day)"
           >
-            +
+            {{ t("calendar.bookDay") }}
           </button>
         </header>
-        <ul class="divide-y divide-stone-100">
-          <li
-            v-for="b in bookingsForDay(day)"
-            :key="b.id"
-            class="flex items-start justify-between gap-3 px-4 py-3"
+
+        <div v-if="bookingsForDay(day).length" class="space-y-3 p-4">
+          <div
+            v-for="resource in resourcesWithBookings(day)"
+            :key="resource.id"
           >
-            <div>
-              <p class="font-medium text-stone-900">{{ b.title }}</p>
-              <p class="text-xs text-stone-500">
-                {{ formatTime(b.startsAt) }}–{{ formatTime(b.endsAt) }}
-                · {{ b.resourceName }}
-                <span v-if="b.participantNames.length"> · {{ b.participantNames.join(", ") }}</span>
-              </p>
-            </div>
-            <button
-              v-if="auth.canWrite"
-              type="button"
-              class="text-xs text-red-600"
-              @click="deleteBooking(b.id)"
-            >
-              {{ t("common.delete") }}
-            </button>
-          </li>
-          <li
-            v-if="!bookingsForDay(day).length"
-            class="px-4 py-3 text-sm text-stone-400"
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-stone-500">
+              {{ resource.name }}
+            </h3>
+            <ul class="mt-1 divide-y divide-stone-100 rounded-xl border border-stone-100">
+              <li
+                v-for="b in bookingsFor(day, resource.id)"
+                :key="b.id"
+                class="flex items-start justify-between gap-3 px-3 py-2"
+              >
+                <div>
+                  <p class="font-medium text-stone-900">{{ b.title }}</p>
+                  <p class="text-xs text-stone-500">
+                    {{ formatTime(b.startsAt) }}–{{ formatTime(b.endsAt) }}
+                    <span v-if="b.participantNames.length">
+                      · {{ b.participantNames.join(", ") }}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  v-if="auth.canWrite"
+                  type="button"
+                  class="btn-danger"
+                  @click="deleteId = b.id"
+                >
+                  {{ t("common.delete") }}
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div v-else class="px-4 py-3 text-sm text-stone-500">
+          <p>{{ t("calendar.noBookingsDay") }}</p>
+          <button
+            v-if="auth.canWrite"
+            type="button"
+            class="btn-ghost mt-1"
+            @click="openCreate(day)"
           >
-            —
-          </li>
-        </ul>
+            {{ t("calendar.newBooking") }}
+          </button>
+        </div>
       </section>
     </div>
 
-    <div
-      v-if="showForm"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showForm = false"
+    <AppDialog
+      :open="showForm"
+      :title="t('calendar.newBooking')"
+      @close="showForm = false"
     >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="createBooking"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">
-          {{ t("calendar.newBooking") }}
-        </h2>
-        <div class="mt-4 grid gap-3">
-          <label class="text-sm font-medium">
-            {{ t("calendar.resource") }}
-            <select v-model="form.resourceId" required class="field">
-              <option
-                v-for="r in trackResources"
-                :key="r.id"
-                :value="r.id"
-              >
-                {{ r.name }}
-              </option>
-            </select>
-          </label>
-          <p class="text-sm font-medium text-stone-700">Reitunterricht</p>
-          <label class="text-sm font-medium">
-            {{ t("calendar.startsAt") }}
-            <input v-model="form.startsAt" type="datetime-local" required class="field" />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("calendar.endsAt") }}
-            <input v-model="form.endsAt" type="datetime-local" required class="field" />
-          </label>
-          <fieldset class="text-sm font-medium">
-            <legend>{{ t("calendar.participants") }}</legend>
-            <p class="mt-1 text-xs font-normal text-stone-500">
-              {{ t("calendar.participantsHint") }}
+      <form class="grid gap-3" @submit.prevent="createBooking">
+        <label class="text-sm font-medium">
+          {{ t("calendar.resource") }}
+          <select v-model="form.resourceId" required class="field">
+            <option
+              v-for="r in trackResources"
+              :key="r.id"
+              :value="r.id"
+            >
+              {{ r.name }}
+            </option>
+          </select>
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("calendar.bookingTitle") }}
+          <input v-model="form.title" required class="field" />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("calendar.startsAt") }}
+          <input v-model="form.startsAt" type="datetime-local" required class="field" />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("calendar.endsAt") }}
+          <input v-model="form.endsAt" type="datetime-local" required class="field" />
+        </label>
+        <fieldset class="text-sm font-medium">
+          <legend>{{ t("calendar.participants") }}</legend>
+          <p class="mt-1 text-xs font-normal text-stone-500">
+            {{ t("calendar.participantsHint") }}
+          </p>
+          <div class="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-stone-200 p-3">
+            <label
+              v-for="member in members"
+              :key="member.userId"
+              class="flex items-center gap-2 font-normal"
+            >
+              <input
+                v-model="form.participantUserIds"
+                type="checkbox"
+                :value="member.userId"
+              />
+              {{ member.name }}
+              <span class="text-xs text-stone-500">({{ t(`roles.${member.role}`) }})</span>
+            </label>
+            <p v-if="!members.length" class="text-sm font-normal text-stone-500">
+              {{ t("common.empty") }}
             </p>
-            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-stone-200 p-3">
-              <label v-for="member in members" :key="member.userId" class="flex items-center gap-2 font-normal">
-                <input v-model="form.participantUserIds" type="checkbox" :value="member.userId" />
-                {{ member.name }}
-                <span class="text-xs text-stone-500">({{ t(`roles.${member.role}`) }})</span>
-              </label>
-              <p v-if="!members.length" class="text-sm font-normal text-stone-500">
-                {{ t("common.empty") }}
-              </p>
-            </div>
-          </fieldset>
-          <label class="text-sm font-medium">
-            {{ t("calendar.notes") }}
-            <textarea v-model="form.notes" rows="2" class="field" />
-          </label>
-        </div>
-        <div class="mt-5 flex gap-2">
+          </div>
+        </fieldset>
+        <label class="text-sm font-medium">
+          {{ t("calendar.notes") }}
+          <textarea v-model="form.notes" rows="2" class="field" />
+        </label>
+        <div class="mt-2 flex gap-2">
           <button type="button" class="btn-ghost flex-1" @click="showForm = false">
             {{ t("common.cancel") }}
           </button>
@@ -310,6 +340,15 @@ onMounted(async () => {
           </button>
         </div>
       </form>
-    </div>
+    </AppDialog>
+
+    <ConfirmDialog
+      :open="deleteId != null"
+      :title="t('common.delete')"
+      :message="t('common.confirmDelete')"
+      :confirm-label="t('common.delete')"
+      @close="deleteId = null"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

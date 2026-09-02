@@ -13,6 +13,8 @@ import {
   startOfMonth,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import AppDialog from "@/components/AppDialog.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import HorseSelect from "@/components/HorseSelect.vue";
 import type { Horse, TrainingLog, TrainingType } from "@/types/api";
 
@@ -33,6 +35,7 @@ const saving = ref(false);
 const error = ref("");
 const showForm = ref(false);
 const editingId = ref<string | null>(null);
+const deleteId = ref<string | null>(null);
 
 const form = ref({
   horseId: "",
@@ -230,9 +233,15 @@ async function saveEntry() {
 }
 
 async function removeEntry(log: TrainingLog) {
-  if (!confirm(t("common.confirmDelete"))) return;
+  deleteId.value = log.id;
+}
+
+async function confirmRemove() {
+  if (!deleteId.value) return;
+  const id = deleteId.value;
+  deleteId.value = null;
   try {
-    await api(`/api/training-logs/${log.id}`, { method: "DELETE" });
+    await api(`/api/training-logs/${id}`, { method: "DELETE" });
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -352,14 +361,14 @@ watch(
               <div v-if="auth.canWrite" class="flex shrink-0 gap-2 text-sm">
                 <button
                   type="button"
-                  class="text-brand-700 hover:underline"
+                  class="btn-ghost"
                   @click="openEdit(entry)"
                 >
                   {{ t("common.edit") }}
                 </button>
                 <button
                   type="button"
-                  class="text-red-700 hover:underline"
+                  class="btn-danger"
                   @click="removeEntry(entry)"
                 >
                   {{ t("common.delete") }}
@@ -372,7 +381,16 @@ watch(
           v-if="!loading && !dayGroups.length"
           class="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-500"
         >
-          {{ t("training.emptyDay") }}
+          <p>{{ t("training.emptyDay") }}</p>
+          <p v-if="auth.canWrite" class="mt-1">{{ t("training.emptyDayHint") }}</p>
+          <button
+            v-if="auth.canWrite"
+            type="button"
+            class="btn-primary mt-3"
+            @click="openCreate"
+          >
+            {{ t("training.newEntry") }}
+          </button>
         </li>
       </ul>
     </template>
@@ -432,14 +450,14 @@ watch(
               <div v-if="auth.canWrite" class="flex shrink-0 gap-2">
                 <button
                   type="button"
-                  class="text-brand-700 hover:underline"
+                  class="btn-ghost"
                   @click="openEdit(entry)"
                 >
                   {{ t("common.edit") }}
                 </button>
                 <button
                   type="button"
-                  class="text-red-700 hover:underline"
+                  class="btn-danger"
                   @click="removeEntry(entry)"
                 >
                   {{ t("common.delete") }}
@@ -457,57 +475,54 @@ watch(
       </div>
     </template>
 
-    <div
-      v-if="showForm"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showForm = false"
+    <AppDialog
+      :open="showForm"
+      :title="editingId ? t('training.editEntry') : t('training.newEntry')"
+      @close="showForm = false"
     >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="saveEntry"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">
-          {{ editingId ? t("training.editEntry") : t("training.newEntry") }}
-        </h2>
-        <div class="mt-4 grid gap-3">
-          <label v-if="!editingId" class="text-sm font-medium">
-            {{ t("training.horse") }}
-            <HorseSelect v-model="form.horseId" :horses="horses" required />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("training.date") }}
-            <input v-model="form.date" type="date" required class="field mt-1" />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("training.activity") }}
-            <select v-model="form.type" required class="field mt-1">
-              <option v-for="trainingType in trainingTypes" :key="trainingType.id" :value="trainingType.name">
-                {{ trainingType.name }}
-              </option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("training.notes") }}
-            <textarea v-model="form.notes" rows="3" class="field mt-1" />
-          </label>
-        </div>
-        <div class="mt-5 flex gap-2">
-          <button
-            type="button"
-            class="btn-ghost flex-1"
-            @click="showForm = false"
-          >
+      <form class="grid gap-3" @submit.prevent="saveEntry">
+        <label v-if="!editingId" class="text-sm font-medium">
+          {{ t("training.horse") }}
+          <HorseSelect v-model="form.horseId" :horses="horses" required />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("training.date") }}
+          <input v-model="form.date" type="date" required class="field mt-1" />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("training.activity") }}
+          <select v-model="form.type" required class="field mt-1">
+            <option
+              v-for="trainingType in trainingTypes"
+              :key="trainingType.id"
+              :value="trainingType.name"
+            >
+              {{ trainingType.name }}
+            </option>
+          </select>
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("training.notes") }}
+          <textarea v-model="form.notes" rows="3" class="field mt-1" />
+        </label>
+        <div class="mt-2 flex gap-2">
+          <button type="button" class="btn-ghost flex-1" @click="showForm = false">
             {{ t("common.cancel") }}
           </button>
-          <button
-            type="submit"
-            class="btn-primary flex-1"
-            :disabled="saving"
-          >
+          <button type="submit" class="btn-primary flex-1" :disabled="saving">
             {{ saving ? t("common.loading") : t("common.save") }}
           </button>
         </div>
       </form>
-    </div>
+    </AppDialog>
+
+    <ConfirmDialog
+      :open="deleteId != null"
+      :title="t('common.delete')"
+      :message="t('common.confirmDelete')"
+      :confirm-label="t('common.delete')"
+      @close="deleteId = null"
+      @confirm="confirmRemove"
+    />
   </div>
 </template>

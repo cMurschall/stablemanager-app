@@ -39,7 +39,7 @@ housingRoutes.get("/accommodations", async (c) => {
 
 housingRoutes.post(
   "/accommodations",
-  requireRoles("hof_admin", "staff"),
+  requireRoles("hof_admin"),
   async (c) => {
     const body = CreateAccommodationSchema.safeParse(await c.req.json());
     if (!body.success) {
@@ -69,7 +69,7 @@ housingRoutes.post(
 
 housingRoutes.patch(
   "/accommodations/:id",
-  requireRoles("hof_admin", "staff"),
+  requireRoles("hof_admin"),
   async (c) => {
     const body = UpdateAccommodationSchema.safeParse(await c.req.json());
     if (!body.success) {
@@ -96,14 +96,11 @@ housingRoutes.patch(
       return c.json({ error: "Unterbringung nicht gefunden" }, 404);
     }
 
-    if (body.data.active !== undefined && c.get("role") !== "hof_admin") {
-      return c.json({ error: "Nur der Hof-Admin kann Unterbringungen aktivieren oder deaktivieren" }, 403);
-    }
     if (body.data.active === false && existing.active) {
       const occupied = await db
         .select({ id: horses.id })
         .from(horses)
-        .where(eq(horses.accommodationId, existing.id))
+        .where(and(eq(horses.accommodationId, existing.id), eq(horses.active, true)))
         .get();
       if (occupied) {
         return c.json({ error: "Zuerst alle Pferde in eine andere Unterbringung umquartieren" }, 400);
@@ -129,7 +126,7 @@ housingRoutes.patch(
 
 housingRoutes.delete(
   "/accommodations/:id",
-  requireRoles("hof_admin", "staff"),
+  requireRoles("hof_admin"),
   async (c) => {
     const accommodationId = routeParam(c, "id");
     const db = createDb(c.env);

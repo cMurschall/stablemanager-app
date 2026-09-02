@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { addDays, dayKey, formatDateTime, formatLocalDate, monthKey } from "@/lib/dates";
 import { parseFeifId } from "@/lib/feif";
 import { useAuthStore } from "@/stores/auth";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type {
   Accommodation,
   AccommodationHistoryEntry,
@@ -30,7 +31,10 @@ const members = ref<Member[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const editing = ref(false);
+const moving = ref(false);
 const error = ref("");
+const confirmDeactivateOpen = ref(false);
+const moveAccommodationId = ref("");
 
 const form = ref({
   name: "",
@@ -77,7 +81,8 @@ async function load() {
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 10);
     syncForm();
-    if (auth.canWrite) {
+    moveAccommodationId.value = horse.value.accommodationId ?? "";
+    if (auth.isAdmin) {
       try {
         const m = await api<{ members: Member[] }>("/api/tenants/members");
         members.value = m.members;
@@ -136,6 +141,7 @@ async function save() {
     });
     horse.value = res.horse;
     editing.value = false;
+    moveAccommodationId.value = res.horse.accommodationId ?? "";
     const [list, hist] = await Promise.all([
       api<{ horses: Horse[] }>("/api/horses"),
       api<{ accommodationHistory: AccommodationHistoryEntry[] }>(
@@ -151,11 +157,43 @@ async function save() {
   }
 }
 
-async function remove() {
-  if (!confirm(t("common.confirmDelete"))) return;
+async function saveMove() {
   saving.value = true;
+  error.value = "";
   try {
-    await api(`/api/horses/${horseId.value}`, { method: "DELETE" });
+    const res = await api<{ horse: Horse }>(`/api/horses/${horseId.value}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        accommodationId: moveAccommodationId.value || null,
+      }),
+    });
+    horse.value = res.horse;
+    moving.value = false;
+    syncForm();
+    const [list, hist] = await Promise.all([
+      api<{ horses: Horse[] }>("/api/horses"),
+      api<{ accommodationHistory: AccommodationHistoryEntry[] }>(
+        `/api/horses/${horseId.value}/accommodation-history`,
+      ),
+    ]);
+    allHorses.value = list.horses;
+    accommodationHistory.value = hist.accommodationHistory ?? [];
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t("common.error");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function deactivate() {
+  confirmDeactivateOpen.value = false;
+  saving.value = true;
+  error.value = "";
+  try {
+    await api(`/api/horses/${horseId.value}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active: false }),
+    });
     router.push({ name: "horses" });
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
@@ -196,13 +234,23 @@ onMounted(load);
       <button type="button" class="btn-ghost" @click="router.push({ name: 'horses' })">
         ← {{ t("common.back") }}
       </button>
-      <div v-if="auth.canWrite && horse && !editing" class="flex gap-2">
-        <button type="button" class="btn-ghost" @click="editing = true">
-          {{ t("common.edit") }}
+      <div v-if="horse && !editing && !moving" class="flex flex-wrap justify-end gap-2">
+        <button
+          v-if="auth.canWrite && !auth.isAdmin"
+          type="button"
+          class="btn-ghost"
+          @click="moving = true; moveAccommodationId = horse.accommodationId ?? ''"
+        >
+          {{ t("horses.move") }}
         </button>
-        <button type="button" class="btn-danger" @click="remove">
-          {{ t("common.delete") }}
-        </button>
+        <template v-if="auth.isAdmin">
+          <button type="button" class="btn-ghost" @click="editing = true">
+            {{ t("common.edit") }}
+          </button>
+          <button type="button" class="btn-danger" @click="confirmDeactivateOpen = true">
+            {{ t("horses.deactivate") }}
+          </button>
+        </template>
       </div>
     </div>
 
@@ -211,11 +259,11 @@ onMounted(load);
 
     <template v-else-if="horse">
       <h1 class="text-xl font-semibold text-brand-800">
-        {{ editing ? t("common.edit") : horse.name }}
+        {{ editing ? t("common.edit") : moving ? t("horses.move") : horse.name }}
       </h1>
 
       <form
-        v-if="editing"
+        v-if="editing && auth.isAdmin"
         class="space-y-3 rounded-2xl border border-stone-200 bg-white p-4"
         @submit.prevent="save"
       >
@@ -250,14 +298,23 @@ onMounted(load);
           {{ t("horses.birthYear") }}
           <input v-model="form.birthYear" type="number" min="1980" max="2100" class="field" />
         </label>
-        <label class="block text-sm font-medium">
-          {{ t("horses.owner") }}
-          <select v-model="form.ownerUserIds" multiple class="field min-h-28">
-            <option v-for="m in members" :key="m.userId" :value="m.userId">
-              {{ m.name }} ({{ m.email }})
-            </option>
-          </select>
-        </label>
+        <fieldset class="text-sm font-medium">
+          <legend>{{ t("horses.owner") }}</legend>
+          <div class="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-stone-200 p-3">
+            <label
+              v-for="m in members"
+              :key="m.userId"
+              class="flex items-center gap-2 font-normal"
+            >
+              <input v-model="form.ownerUserIds" type="checkbox" :value="m.userId" />
+              {{ m.name }}
+              <span class="text-xs text-stone-500">({{ m.email }})</span>
+            </label>
+            <p v-if="!members.length" class="text-sm font-normal text-stone-500">
+              {{ t("common.empty") }}
+            </p>
+          </div>
+        </fieldset>
         <label class="block text-sm font-medium">
           {{ t("horses.accommodation") }}
           <select v-model="form.accommodationId" class="field">
@@ -281,6 +338,38 @@ onMounted(load);
           </button>
           <button type="submit" class="btn-primary flex-1" :disabled="saving">
             {{ saving ? t("common.loading") : t("common.save") }}
+          </button>
+        </div>
+      </form>
+
+      <form
+        v-else-if="moving && auth.canWrite && !auth.isAdmin"
+        class="space-y-3 rounded-2xl border border-stone-200 bg-white p-4"
+        @submit.prevent="saveMove"
+      >
+        <label class="block text-sm font-medium">
+          {{ t("horses.accommodation") }}
+          <select v-model="moveAccommodationId" class="field">
+            <option value="">—</option>
+            <option
+              v-for="s in accommodations.filter((row) => row.active || row.id === moveAccommodationId)"
+              :key="s.id"
+              :value="s.id"
+            >
+              {{ s.name }} ({{ t(`accommodationKind.${s.kind}`) }})
+            </option>
+          </select>
+        </label>
+        <div class="flex gap-2 pt-2">
+          <button
+            type="button"
+            class="btn-ghost flex-1"
+            @click="moving = false; moveAccommodationId = horse.accommodationId ?? ''"
+          >
+            {{ t("common.cancel") }}
+          </button>
+          <button type="submit" class="btn-primary flex-1" :disabled="saving">
+            {{ saving ? t("common.loading") : t("horses.moveSave") }}
           </button>
         </div>
       </form>
@@ -326,7 +415,7 @@ onMounted(load);
             <li v-for="mate in herdMates" :key="mate.id">
               <RouterLink
                 :to="`/horses/${mate.id}`"
-                class="block py-2 text-sm text-brand-700 hover:underline"
+                class="btn-ghost block w-full justify-start text-left"
               >
                 {{ mate.name }}
               </RouterLink>
@@ -348,7 +437,7 @@ onMounted(load);
                   horseId: horse.id,
                 },
               }"
-              class="text-xs text-brand-700 hover:underline"
+              class="btn-ghost"
             >
               {{ t("horses.trainingHistoryMore") }}
             </RouterLink>
@@ -422,5 +511,14 @@ onMounted(load);
         </section>
       </template>
     </template>
+
+    <ConfirmDialog
+      :open="confirmDeactivateOpen"
+      :title="t('horses.deactivate')"
+      :message="t('horses.deactivateConfirm')"
+      :confirm-label="t('horses.deactivate')"
+      @close="confirmDeactivateOpen = false"
+      @confirm="deactivate"
+    />
   </div>
 </template>

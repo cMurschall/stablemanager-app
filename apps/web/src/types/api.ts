@@ -18,6 +18,7 @@ export type Horse = {
   ownerNames?: string[];
   accommodationId: string | null;
   notes: string | null;
+  active: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -150,6 +151,7 @@ export type Member = {
   email: string;
   name: string;
   role: Role;
+  horseCount?: number;
 };
 
 export type Invite = {

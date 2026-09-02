@@ -9,6 +9,7 @@ import {
   toLocalInputValue,
 } from "@/lib/dates";
 import { useAuthStore } from "@/stores/auth";
+import AppDialog from "@/components/AppDialog.vue";
 import HorseSelect from "@/components/HorseSelect.vue";
 import type { FarrierSignup, FarrierVisit, Horse } from "@/types/api";
 
@@ -486,51 +487,42 @@ onMounted(load);
       </ul>
     </section>
 
-    <!-- Create visit modal -->
-    <div
-      v-if="showVisitForm"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showVisitForm = false"
+    <AppDialog
+      :open="showVisitForm"
+      :title="t('farrier.newVisit')"
+      @close="showVisitForm = false"
     >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="createVisit"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">
-          {{ t("farrier.newVisit") }}
-        </h2>
-        <div class="mt-4 grid gap-3">
-          <label class="text-sm font-medium">
-            {{ t("farrier.startsAt") }}
-            <input
-              v-model="visitForm.startsAt"
-              type="datetime-local"
-              required
-              class="field mt-1"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("farrier.endsAt") }}
-            <input
-              v-model="visitForm.endsAt"
-              type="datetime-local"
-              class="field mt-1"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("farrier.farrierName") }}
-            <input
-              v-model="visitForm.farrierName"
-              type="text"
-              class="field mt-1"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("farrier.notes") }}
-            <textarea v-model="visitForm.notes" rows="2" class="field mt-1" />
-          </label>
-        </div>
-        <div class="mt-5 flex gap-2">
+      <form class="grid gap-3" @submit.prevent="createVisit">
+        <label class="text-sm font-medium">
+          {{ t("farrier.startsAt") }}
+          <input
+            v-model="visitForm.startsAt"
+            type="datetime-local"
+            required
+            class="field mt-1"
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("farrier.endsAt") }}
+          <input
+            v-model="visitForm.endsAt"
+            type="datetime-local"
+            class="field mt-1"
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("farrier.farrierName") }}
+          <input
+            v-model="visitForm.farrierName"
+            type="text"
+            class="field mt-1"
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("farrier.notes") }}
+          <textarea v-model="visitForm.notes" rows="2" class="field mt-1" />
+        </label>
+        <div class="mt-2 flex gap-2">
           <button
             type="button"
             class="btn-ghost flex-1"
@@ -543,74 +535,61 @@ onMounted(load);
           </button>
         </div>
       </form>
-    </div>
+    </AppDialog>
 
-    <!-- Signup modal -->
-    <div
-      v-if="showSignupForm && signupVisit"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showSignupForm = false"
+    <AppDialog
+      :open="showSignupForm && signupVisit != null"
+      :title="t('farrier.signup')"
+      @close="showSignupForm = false"
     >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="createSignup"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">
-          {{ t("farrier.signup") }}
-        </h2>
-        <p class="mt-1 text-sm text-stone-500">
+      <form v-if="signupVisit" class="grid gap-3" @submit.prevent="createSignup">
+        <p class="text-sm text-stone-500">
           {{ formatDateTime(signupVisit.startsAt) }}
         </p>
-        <div class="mt-4 grid gap-3">
-          <label class="text-sm font-medium">
-            {{ t("farrier.horse") }}
-            <HorseSelect
-              v-model="signupForm.horseId"
-              :horses="availableHorses"
-              required
+        <label class="text-sm font-medium">
+          {{ t("farrier.horse") }}
+          <HorseSelect
+            v-model="signupForm.horseId"
+            :horses="availableHorses"
+            required
+          />
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("farrier.shoeing") }}
+          <select v-model="signupForm.shoeing" class="field mt-1">
+            <option v-for="opt in shoeingOptions" :key="opt" :value="opt">
+              {{ shoeingLabel(opt) }}
+            </option>
+          </select>
+        </label>
+        <label class="text-sm font-medium">
+          {{ t("farrier.shoeingNotes") }}
+          <textarea
+            v-model="signupForm.shoeingNotes"
+            rows="2"
+            class="field mt-1"
+          />
+        </label>
+        <fieldset class="text-sm">
+          <legend class="font-medium">{{ t("farrier.presentation") }}</legend>
+          <label class="mt-2 flex items-center gap-2">
+            <input
+              v-model="signupForm.presentation"
+              type="radio"
+              value="staff"
             />
+            {{ t("farrier.presentationStaff") }}
           </label>
-          <label class="text-sm font-medium">
-            {{ t("farrier.shoeing") }}
-            <select v-model="signupForm.shoeing" class="field mt-1">
-              <option
-                v-for="opt in shoeingOptions"
-                :key="opt"
-                :value="opt"
-              >
-                {{ shoeingLabel(opt) }}
-              </option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("farrier.shoeingNotes") }}
-            <textarea
-              v-model="signupForm.shoeingNotes"
-              rows="2"
-              class="field mt-1"
+          <label class="mt-1 flex items-center gap-2">
+            <input
+              v-model="signupForm.presentation"
+              type="radio"
+              value="owner"
             />
+            {{ t("farrier.presentationOwner") }}
           </label>
-          <fieldset class="text-sm">
-            <legend class="font-medium">{{ t("farrier.presentation") }}</legend>
-            <label class="mt-2 flex items-center gap-2">
-              <input
-                v-model="signupForm.presentation"
-                type="radio"
-                value="staff"
-              />
-              {{ t("farrier.presentationStaff") }}
-            </label>
-            <label class="mt-1 flex items-center gap-2">
-              <input
-                v-model="signupForm.presentation"
-                type="radio"
-                value="owner"
-              />
-              {{ t("farrier.presentationOwner") }}
-            </label>
-          </fieldset>
-        </div>
-        <div class="mt-5 flex gap-2">
+        </fieldset>
+        <div class="mt-2 flex gap-2">
           <button
             type="button"
             class="btn-ghost flex-1"
@@ -627,6 +606,6 @@ onMounted(load);
           </button>
         </div>
       </form>
-    </div>
+    </AppDialog>
   </div>
 </template>

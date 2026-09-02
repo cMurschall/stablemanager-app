@@ -158,6 +158,7 @@ export const horses = sqliteTable(
       { onDelete: "set null" },
     ),
     notes: text("notes"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),

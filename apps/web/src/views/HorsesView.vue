@@ -2,36 +2,20 @@
 import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
-import type { HorseSex } from "@stablemanager/shared";
 import { api } from "@/lib/api";
-import { parseFeifId } from "@/lib/feif";
 import { useAuthStore } from "@/stores/auth";
-import type { Accommodation, Horse, Member } from "@/types/api";
+import type { Accommodation, Horse } from "@/types/api";
 
 const { t } = useI18n();
 const auth = useAuthStore();
 
 const horses = ref<Horse[]>([]);
 const accommodations = ref<Accommodation[]>([]);
-const members = ref<Member[]>([]);
 const loading = ref(true);
 const error = ref("");
-const showForm = ref(false);
-const saving = ref(false);
-const movingHorseId = ref<string | null>(null);
 const search = ref("");
 const filterAccommodationId = ref("");
-const viewMode = ref<"list" | "herds">("list");
-
-const form = ref({
-  name: "",
-  feifId: "",
-  sex: "" as "" | HorseSex,
-  birthYear: "" as string | number,
-  ownerUserIds: [] as string[],
-  accommodationId: "",
-  notes: "",
-});
+const groupBy = ref<"" | "accommodation" | "sex" | "birthYear">("");
 
 const filteredHorses = computed(() => {
   const term = search.value.trim().toLocaleLowerCase("de");
@@ -43,16 +27,78 @@ const filteredHorses = computed(() => {
   );
 });
 
-const herdGroups = computed(() => {
-  const groups = new Map<string, { id: string | null; label: string; horses: Horse[] }>();
+type HorseGroup = {
+  id: string | null;
+  label: string;
+  sortKey: string;
+  horses: Horse[];
+};
+
+const sexOrder: Record<string, number> = {
+  mare: 0,
+  stallion: 1,
+  gelding: 2,
+  unknown: 3,
+};
+
+function groupKeyAndLabel(horse: Horse): { key: string; label: string; sortKey: string } {
+  if (groupBy.value === "sex") {
+    const sex = horse.sex ?? "unknown";
+    return {
+      key: sex,
+      label: horse.sex ? t(`sex.${horse.sex}`) : t("horses.groupUnknownSex"),
+      sortKey: String(sexOrder[sex] ?? 9),
+    };
+  }
+  if (groupBy.value === "birthYear") {
+    if (horse.birthYear == null) {
+      return {
+        key: "unknown",
+        label: t("horses.groupUnknownBirthYear"),
+        sortKey: "9999",
+      };
+    }
+    return {
+      key: String(horse.birthYear),
+      label: String(horse.birthYear),
+      sortKey: String(10000 - horse.birthYear),
+    };
+  }
+  const id = horse.accommodationId;
+  return {
+    key: id ?? "unassigned",
+    label: id
+      ? accommodationLabel(id)
+      : t("horses.accommodationHistoryUnassigned"),
+    sortKey: id
+      ? accommodationLabel(id)
+      : t("horses.accommodationHistoryUnassigned"),
+  };
+}
+
+const horseGroups = computed((): HorseGroup[] => {
+  if (!groupBy.value) return [];
+  const groups = new Map<string, HorseGroup>();
   for (const horse of filteredHorses.value) {
-    const id = horse.accommodationId;
-    const key = id ?? "unassigned";
-    const group = groups.get(key) ?? { id, label: accommodationLabel(id), horses: [] };
+    const { key, label, sortKey } = groupKeyAndLabel(horse);
+    const group =
+      groups.get(key) ?? {
+        id: key === "unassigned" || key === "unknown" ? null : key,
+        label,
+        sortKey,
+        horses: [],
+      };
     group.horses.push(horse);
     groups.set(key, group);
   }
-  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "de"));
+  for (const group of groups.values()) {
+    group.horses.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      a.sortKey.localeCompare(b.sortKey, "de", { numeric: true }) ||
+      a.label.localeCompare(b.label, "de"),
+  );
 });
 
 async function load() {
@@ -65,69 +111,10 @@ async function load() {
     ]);
     horses.value = h.horses;
     accommodations.value = a.accommodations;
-    if (auth.canWrite) {
-      try {
-        const m = await api<{ members: Member[] }>("/api/tenants/members");
-        members.value = m.members;
-      } catch {
-        members.value = [];
-      }
-    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : t("common.error");
   } finally {
     loading.value = false;
-  }
-}
-
-function openCreate() {
-  form.value = {
-    name: "",
-    feifId: "",
-    sex: "",
-    birthYear: "",
-    ownerUserIds: [],
-    accommodationId: "",
-    notes: "",
-  };
-  showForm.value = true;
-}
-
-/** Prefill birth year + sex from FEIF-ID; keep gelding if user already chose it */
-function onFeifIdInput() {
-  const parsed = parseFeifId(form.value.feifId);
-  if (!parsed) return;
-  form.value.feifId = parsed.feifId;
-  form.value.birthYear = parsed.birthYear;
-  if (form.value.sex !== "gelding") {
-    form.value.sex = parsed.sex;
-  }
-}
-
-async function createHorse() {
-  saving.value = true;
-  error.value = "";
-  try {
-    const birthYear =
-      form.value.birthYear === "" ? null : Number(form.value.birthYear);
-    await api("/api/horses", {
-      method: "POST",
-      body: JSON.stringify({
-        name: form.value.name,
-        feifId: form.value.feifId.trim() || null,
-        sex: form.value.sex || null,
-        birthYear: Number.isFinite(birthYear) ? birthYear : null,
-        ownerUserIds: form.value.ownerUserIds,
-        accommodationId: form.value.accommodationId || null,
-        notes: form.value.notes.trim() || null,
-      }),
-    });
-    showForm.value = false;
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -138,45 +125,36 @@ function accommodationLabel(id: string | null) {
   return `${row.name} (${t(`accommodationKind.${row.kind}`)})`;
 }
 
-async function changeAccommodation(horse: Horse, accommodationId: string) {
-  if (accommodationId === (horse.accommodationId ?? "")) return;
-  movingHorseId.value = horse.id;
-  error.value = "";
-  try {
-    const result = await api<{ horse: Horse }>(`/api/horses/${horse.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ accommodationId: accommodationId || null }),
-    });
-    const index = horses.value.findIndex((item) => item.id === horse.id);
-    if (index >= 0) horses.value[index] = result.horse;
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : t("common.error");
-  } finally {
-    movingHorseId.value = null;
-  }
-}
-
 onMounted(load);
 </script>
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex flex-wrap items-end justify-between gap-3">
       <h1 class="text-xl font-semibold text-brand-800">
         {{ auth.currentRole === "boarder" ? t("horses.myHorses") : t("horses.title") }}
       </h1>
-      <button
-        v-if="auth.canWrite"
-        type="button"
-        class="btn-primary"
-        @click="openCreate"
+      <RouterLink
+        v-if="auth.isAdmin"
+        to="/hof?tab=horses"
+        class="btn-ghost"
       >
-        {{ t("horses.new") }}
-      </button>
+        {{ t("nav.hof") }}
+      </RouterLink>
     </div>
 
-    <section v-if="auth.currentRole !== 'boarder'" class="groupbox grid gap-3 sm:grid-cols-2">
-      <label class="text-sm font-medium text-stone-700">
+    <section
+      class="groupbox grid gap-3"
+      :class="
+        auth.currentRole !== 'boarder'
+          ? 'sm:grid-cols-2 lg:grid-cols-3'
+          : 'sm:grid-cols-1'
+      "
+    >
+      <label
+        v-if="auth.currentRole !== 'boarder'"
+        class="text-sm font-medium text-stone-700"
+      >
         {{ t("horses.filterName") }}
         <input
           v-model="search"
@@ -184,7 +162,10 @@ onMounted(load);
           :placeholder="t('horses.filterNamePlaceholder')"
         />
       </label>
-      <label class="text-sm font-medium text-stone-700">
+      <label
+        v-if="auth.currentRole !== 'boarder'"
+        class="text-sm font-medium text-stone-700"
+      >
         {{ t("horses.filterAccommodation") }}
         <select v-model="filterAccommodationId" class="field mt-1">
           <option value="">{{ t("horses.allAccommodations") }}</option>
@@ -197,30 +178,32 @@ onMounted(load);
           </option>
         </select>
       </label>
+      <label class="text-sm font-medium text-stone-700">
+        {{ t("horses.groupBy") }}
+        <select v-model="groupBy" class="field mt-1">
+          <option value="">{{ t("horses.groupByNone") }}</option>
+          <option value="accommodation">
+            {{ t("horses.groupByAccommodation") }}
+          </option>
+          <option value="sex">{{ t("horses.groupBySex") }}</option>
+          <option value="birthYear">{{ t("horses.groupByBirthYear") }}</option>
+        </select>
+      </label>
     </section>
-
-    <div class="flex w-fit gap-1 rounded-lg bg-stone-100 p-1 text-sm" role="tablist" aria-label="Pferdeansicht">
-      <button type="button" role="tab" class="rounded-lg px-3 py-1.5 text-sm" :aria-selected="viewMode === 'list'" :class="viewMode === 'list' ? 'bg-white font-medium shadow-sm' : 'text-stone-600'" @click="viewMode = 'list'">{{ t("horses.viewList") }}</button>
-      <button type="button" role="tab" class="rounded-lg px-3 py-1.5 text-sm" :aria-selected="viewMode === 'herds'" :class="viewMode === 'herds' ? 'bg-white font-medium shadow-sm' : 'text-stone-600'" @click="viewMode = 'herds'">{{ t("horses.viewHerds") }}</button>
-    </div>
 
     <p v-if="loading" class="text-sm text-stone-500">{{ t("common.loading") }}</p>
     <p v-else-if="error" class="text-sm text-red-600">{{ error }}</p>
 
     <ul
-      v-else-if="filteredHorses.length && viewMode === 'list'"
+      v-else-if="filteredHorses.length && !groupBy"
       class="divide-y divide-stone-200 rounded-2xl border border-stone-200 bg-white"
     >
-      <li
-        v-for="horse in filteredHorses"
-        :key="horse.id"
-        class="flex items-center gap-3 px-4 py-3"
-      >
+      <li v-for="horse in filteredHorses" :key="horse.id">
         <RouterLink
           :to="`/horses/${horse.id}`"
-          class="flex min-w-0 flex-1 items-center justify-between gap-3 hover:bg-brand-50/60"
+          class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-brand-50/60"
         >
-          <div>
+          <div class="min-w-0">
             <p class="font-medium text-stone-900">{{ horse.name }}</p>
             <p class="text-xs text-stone-500">
               <span v-if="horse.feifId">{{ horse.feifId }} · </span>
@@ -230,36 +213,41 @@ onMounted(load);
           </div>
           <span class="text-stone-400">›</span>
         </RouterLink>
-        <label v-if="auth.canWrite" class="w-44 shrink-0 text-xs text-stone-500">
-          {{ t("horses.accommodation") }}
-          <select
-            class="field mt-1 py-1 text-sm"
-            :value="horse.accommodationId ?? ''"
-            :disabled="movingHorseId === horse.id"
-            @change="changeAccommodation(horse, ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">—</option>
-            <option
-              v-for="accommodation in accommodations.filter((item) => item.active || item.id === horse.accommodationId)"
-              :key="accommodation.id"
-              :value="accommodation.id"
-            >
-              {{ accommodationLabel(accommodation.id) }}
-            </option>
-          </select>
-        </label>
       </li>
     </ul>
     <section v-else-if="filteredHorses.length" class="space-y-3">
-      <article v-for="group in herdGroups" :key="group.id ?? 'unassigned'" class="groupbox">
+      <article v-for="group in horseGroups" :key="group.id ?? group.label" class="groupbox">
         <div class="flex items-baseline justify-between gap-3">
           <h2 class="groupbox-title">{{ group.label }}</h2>
           <span class="text-xs text-stone-500">{{ t("horses.horsesCount", { n: group.horses.length }) }}</span>
         </div>
         <ul class="divide-y divide-stone-100 rounded-xl border border-stone-100">
           <li v-for="horse in group.horses" :key="horse.id">
-            <RouterLink :to="`/horses/${horse.id}`" class="flex items-center justify-between gap-3 px-3 py-2 hover:bg-brand-50">
-              <span class="font-medium text-stone-900">{{ horse.name }}</span><span class="text-stone-400">›</span>
+            <RouterLink
+              :to="`/horses/${horse.id}`"
+              class="flex items-center justify-between gap-3 px-3 py-2 hover:bg-brand-50"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-stone-900">{{ horse.name }}</p>
+                <p class="text-xs text-stone-500">
+                  <template v-if="groupBy === 'accommodation'">
+                    <span v-if="horse.feifId">{{ horse.feifId }}</span>
+                    <span v-if="horse.feifId && horse.sex"> · </span>
+                    <span v-if="horse.sex">{{ t(`sex.${horse.sex}`) }}</span>
+                  </template>
+                  <template v-else-if="groupBy === 'sex'">
+                    <span v-if="horse.feifId">{{ horse.feifId }} · </span>
+                    <span v-if="horse.birthYear">{{ horse.birthYear }} · </span>
+                    {{ accommodationLabel(horse.accommodationId) }}
+                  </template>
+                  <template v-else>
+                    <span v-if="horse.feifId">{{ horse.feifId }} · </span>
+                    <span v-if="horse.sex">{{ t(`sex.${horse.sex}`) }} · </span>
+                    {{ accommodationLabel(horse.accommodationId) }}
+                  </template>
+                </p>
+              </div>
+              <span class="text-stone-400">›</span>
             </RouterLink>
           </li>
         </ul>
@@ -269,86 +257,5 @@ onMounted(load);
       {{ t("horses.noFilterResults") }}
     </p>
     <p v-else class="text-sm text-stone-500">{{ t("horses.none") }}</p>
-
-    <div
-      v-if="showForm"
-      class="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-      @click.self="showForm = false"
-    >
-      <form
-        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-        @submit.prevent="createHorse"
-      >
-        <h2 class="text-lg font-semibold text-brand-800">{{ t("horses.new") }}</h2>
-        <div class="mt-4 grid gap-3">
-          <label class="text-sm font-medium">
-            {{ t("horses.feifId") }}
-            <input
-              v-model="form.feifId"
-              class="field"
-              placeholder="DE2017222618"
-              pattern="[A-Za-z]{2}\d{8,12}"
-              @input="onFeifIdInput"
-              @blur="onFeifIdInput"
-            />
-            <span class="mt-1 block text-xs font-normal text-stone-500">
-              {{ t("horses.feifHint") }}
-            </span>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.name") }}
-            <input v-model="form.name" required class="field" />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.sex") }}
-            <select v-model="form.sex" class="field">
-              <option value="">—</option>
-              <option value="mare">{{ t("sex.mare") }}</option>
-              <option value="stallion">{{ t("sex.stallion") }}</option>
-              <option value="gelding">{{ t("sex.gelding") }}</option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.birthYear") }}
-            <input
-              v-model="form.birthYear"
-              type="number"
-              min="1980"
-              max="2100"
-              class="field"
-            />
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.owner") }}
-            <select v-model="form.ownerUserIds" multiple class="field min-h-28">
-              <option v-for="m in members" :key="m.userId" :value="m.userId">
-                {{ m.name }} ({{ m.email }})
-              </option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.accommodation") }}
-            <select v-model="form.accommodationId" class="field">
-              <option value="">—</option>
-            <option v-for="s in accommodations.filter((row) => row.active)" :key="s.id" :value="s.id">
-                {{ s.name }} ({{ t(`accommodationKind.${s.kind}`) }})
-              </option>
-            </select>
-          </label>
-          <label class="text-sm font-medium">
-            {{ t("horses.notes") }}
-            <textarea v-model="form.notes" rows="3" class="field" />
-          </label>
-        </div>
-        <div class="mt-5 flex gap-2">
-          <button type="button" class="btn-ghost flex-1" @click="showForm = false">
-            {{ t("common.cancel") }}
-          </button>
-          <button type="submit" class="btn-primary flex-1" :disabled="saving">
-            {{ saving ? t("common.loading") : t("common.create") }}
-          </button>
-        </div>
-      </form>
-    </div>
   </div>
 </template>
